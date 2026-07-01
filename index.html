@@ -80,7 +80,12 @@
           <div class="flex-grow border-t border-grey/20"></div>
         </div>
         <button onclick="handleGoogleAuth()" class="w-full bg-white text-deep font-bold p-3 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-opacity-95 transition">
-          <img src="https://lh3.googleusercontent.com/COxitSg0gW3sJH23993wLJ6Hzg2LQA9A5-XNisCH0JV78OBshgJsm8Yg781gclgU0F07" class="w-5 h-5" alt="Google">
+          <svg class="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+            <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+            <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+            <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+          </svg>
           Aceder com o Google
         </button>
       </div>
@@ -96,32 +101,17 @@
       <!-- Staff Profiles List -->
       <div id="staff-profiles" class="grid grid-cols-2 gap-4 mb-8"></div>
 
-      <!-- PIN Input Pad (Hidden by default, shown when staff profile is clicked) -->
+      <!-- PIN Input (Hidden by default, shown when a staff profile that requires a PIN is clicked) -->
       <div id="pin-pad-container" class="hidden c-card p-6 rounded-xl shadow-xl animate-fade-in">
         <div class="flex justify-between items-center mb-6">
           <span id="pin-staff-name" class="font-bold text-teal">---</span>
           <button onclick="cancelPinPad()" class="text-xs text-grey hover:text-white">Voltar</button>
         </div>
-        <div class="flex justify-center gap-3 mb-6">
-          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
-          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
-          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
-          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
-        </div>
-        <div class="grid grid-cols-3 gap-3">
-          <button onclick="pressPin('1')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">1</button>
-          <button onclick="pressPin('2')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">2</button>
-          <button onclick="pressPin('3')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">3</button>
-          <button onclick="pressPin('4')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">4</button>
-          <button onclick="pressPin('5')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">5</button>
-          <button onclick="pressPin('6')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">6</button>
-          <button onclick="pressPin('7')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">7</button>
-          <button onclick="pressPin('8')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">8</button>
-          <button onclick="pressPin('9')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">9</button>
-          <button onclick="clearPin()" class="c-input p-4 rounded-lg text-xs font-bold hover:bg-brandRed transition">LIMPAR</button>
-          <button onclick="pressPin('0')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">0</button>
-          <button onclick="backspacePin()" class="c-input p-4 rounded-lg text-xs font-bold hover:bg-teal hover:text-deep transition">APAGAR</button>
-        </div>
+        <label class="block text-xs text-grey mb-2 text-left">Insira o PIN (use o teclado do telemóvel/computador)</label>
+        <input type="password" id="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+          class="c-input w-full p-3 rounded-lg text-xl text-center tracking-[0.4em] font-mono mb-4"
+          placeholder="••••" onkeypress="if(event.key==='Enter'){confirmPinLogin();}">
+        <button onclick="confirmPinLogin()" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Confirmar (Enter)</button>
       </div>
 
       <button onclick="signoutFirebase()" class="mt-8 text-xs text-grey hover:text-brandRed transition">Sair da Empresa</button>
@@ -577,12 +567,28 @@
     </div>
   </div>
 
+  <!-- Modal: Set/Change Staff PIN -->
+  <div id="mod-set-pin" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Definir PIN — <span id="set-pin-staff-name">---</span></div>
+      <div>
+        <label class="block text-xs text-grey mb-1">PIN numérico (4-6 dígitos)</label>
+        <input type="password" id="set-pin-value" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 2580" onkeypress="if(event.key==='Enter'){saveStaffPin();}">
+        <p class="text-[10px] text-grey mt-1">Deixe vazio para permitir acesso direto sem PIN.</p>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-set-pin')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveStaffPin()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Gravar PIN</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Add/Edit Staff User -->
   <div id="mod-add-staff" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
     <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
       <div class="text-lg font-bold text-teal">Adicionar Funcionário</div>
       <div><label class="block text-xs text-grey mb-1">Nome Completo</label><input type="text" id="staff-name" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
-      <div><label class="block text-xs text-grey mb-1">PIN numérico (4-6 dígitos)</label><input type="password" id="staff-pin" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 2580"></div>
+      <div><label class="block text-xs text-grey mb-1">PIN numérico (opcional — 4-6 dígitos, deixe vazio para acesso direto)</label><input type="password" id="staff-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 2580"></div>
       <div>
         <label class="block text-xs text-grey mb-1">Função / Cargo</label>
         <select id="staff-role" onchange="toggleStaffPermissionsUi(this.value)" class="c-input w-full p-2.5 rounded-lg text-sm"><option value="Cashier">Caixa / Funcionário</option><option value="Manager">Gerente / Manager</option></select>
@@ -641,7 +647,7 @@
         { id: 103, name: "Frango Grelhado", price: 450 }, { id: 104, name: "Batata Frita", price: 150 },
         { id: 105, name: "Água Mineral", price: 50 }, { id: 106, name: "Coca-Cola", price: 70 }
       ],
-      staffList: [{ id: "gerente-1", name: "Gerente Geral", pin: "1234", role: "Manager", permissions: {} }],
+      staffList: [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }],
       stockProducts: [
         { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 100, unit: "un", minStock: 20 },
         { id: 2, name: "Cerveja Laurentina", category: "Bebidas", price: 95, qty: 50, unit: "un", minStock: 10 },
@@ -658,7 +664,6 @@
     let currentBusinessUser = null;
     let currentStaffUser = null;
     let selectedStaffForPin = null;
-    let pinBuffer = "";
     let isSyncing = false;
     let authMode = "signin";
     let activePage = "tabs";
@@ -717,10 +722,18 @@
           currentBusinessUser = user;
           document.getElementById("scr-auth").classList.add("hidden");
           loadLocalState();
-          document.getElementById("scr-staff").classList.remove("hidden");
-          renderStaffProfiles();
           if (dbState.settings.syncEnabled) {
             setupRealtimeSync();
+          }
+          // First-time / single-manager access: if there's only one staff profile and
+          // no PIN has been configured for them yet, log straight into the dashboard.
+          // The manager can set a PIN for themselves (and add staff) later in Settings.
+          if (dbState.staffList.length === 1 && !dbState.staffList[0].pin) {
+            document.getElementById("scr-staff").classList.add("hidden");
+            loginAsStaff(dbState.staffList[0]);
+          } else {
+            renderStaffProfiles();
+            document.getElementById("scr-staff").classList.remove("hidden");
           }
         } else {
           currentBusinessUser = null;
@@ -898,51 +911,49 @@
     function selectStaffForLogin(id) {
       selectedStaffForLoginId = id;
       selectedStaffForPin = dbState.staffList.find(s => s.id === id);
+      // No PIN configured for this profile yet -> log straight in, no PIN screen at all.
+      if (!selectedStaffForPin.pin) {
+        loginAsStaff(selectedStaffForPin);
+        return;
+      }
       document.getElementById("pin-staff-name").innerText = selectedStaffForPin.name;
       document.getElementById("staff-profiles").classList.add("hidden");
       document.getElementById("pin-pad-container").classList.remove("hidden");
-      pinBuffer = "";
-      updatePinDots();
+      const input = document.getElementById("pin-input");
+      input.value = "";
+      setTimeout(() => input.focus(), 50);
     }
 
     function cancelPinPad() {
+      document.getElementById("pin-input").value = "";
       document.getElementById("pin-pad-container").classList.add("hidden");
       document.getElementById("staff-profiles").classList.remove("hidden");
     }
 
-    function pressPin(num) {
-      if (pinBuffer.length < 6) {
-        pinBuffer += num;
-        updatePinDots();
-        if (pinBuffer === selectedStaffForPin.pin) {
-          // Success Staff Auth
-          currentStaffUser = selectedStaffForPin;
-          document.getElementById("scr-staff").classList.add("hidden");
-          document.getElementById("scr-main").classList.remove("hidden");
-          logAudit("PIN login", `Login efetuado por ${currentStaffUser.name}`);
-          resetActivityTimer();
-          switchPage("tabs");
-          renderUI();
-          showToast(`Sessão aberta como ${currentStaffUser.name}`);
-        } else if (pinBuffer.length >= selectedStaffForPin.pin.length) {
-          showToast("PIN Incorreto", "error");
-          clearPin();
-        }
+    function confirmPinLogin() {
+      const input = document.getElementById("pin-input");
+      const val = input.value.trim();
+      if (!val) return showToast("Introduza o PIN", "error");
+      if (val === selectedStaffForPin.pin) {
+        loginAsStaff(selectedStaffForPin);
+      } else {
+        showToast("PIN Incorreto", "error");
+        input.value = "";
+        input.focus();
       }
     }
 
-    function updatePinDots() {
-      const dots = document.querySelectorAll(".pin-dot");
-      dots.forEach((dot, i) => {
-        if (i < pinBuffer.length) {
-          dot.classList.add("bg-teal");
-        } else {
-          dot.classList.remove("bg-teal");
-        }
-      });
+    function loginAsStaff(staff) {
+      currentStaffUser = staff;
+      document.getElementById("pin-pad-container").classList.add("hidden");
+      document.getElementById("scr-staff").classList.add("hidden");
+      document.getElementById("scr-main").classList.remove("hidden");
+      logAudit(staff.pin ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
+      resetActivityTimer();
+      switchPage("tabs");
+      renderUI();
+      showToast(`Sessão aberta como ${currentStaffUser.name}`);
     }
-    function clearPin() { pinBuffer = ""; updatePinDots(); }
-    function backspacePin() { pinBuffer = pinBuffer.slice(0, -1); updatePinDots(); }
 
     function lockStaffSession() {
       currentStaffUser = null;
@@ -1910,11 +1921,39 @@
         <div class="flex justify-between items-center bg-light/30 p-2.5 rounded-lg text-xs">
           <div>
             <div class="font-bold text-white">${s.name}</div>
-            <div class="text-grey">${s.role === "Manager" ? "Gerente" : "Caixa PIN: " + s.pin}</div>
+            <div class="text-grey">${s.role === "Manager" ? "Gerente" : "Caixa"} — ${s.pin ? "PIN definido" : "sem PIN (acesso direto)"}</div>
           </div>
-          ${s.role !== "Manager" ? `<button onclick="deleteStaff('${s.id}')" class="text-brandRed hover:underline">Remover</button>` : ''}
+          <div class="flex items-center gap-3">
+            <button onclick="openSetPinModal('${s.id}')" class="text-teal hover:underline">Definir PIN</button>
+            ${s.role !== "Manager" ? `<button onclick="deleteStaff('${s.id}')" class="text-brandRed hover:underline">Remover</button>` : ''}
+          </div>
         </div>
       `).join('');
+    }
+
+    // Set / change a staff member's PIN (used by the Manager to configure their own PIN too)
+    let staffIdForPinEdit = null;
+    function openSetPinModal(id) {
+      const staff = dbState.staffList.find(s => s.id === id);
+      if (!staff) return;
+      staffIdForPinEdit = id;
+      document.getElementById("set-pin-staff-name").innerText = staff.name;
+      document.getElementById("set-pin-value").value = staff.pin || "";
+      openModal("mod-set-pin");
+      setTimeout(() => document.getElementById("set-pin-value").focus(), 50);
+    }
+
+    function saveStaffPin() {
+      const val = document.getElementById("set-pin-value").value.trim();
+      if (val && (val.length < 4 || val.length > 6 || !/^\d+$/.test(val))) {
+        return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
+      }
+      updateState(() => {
+        const staff = dbState.staffList.find(s => s.id === staffIdForPinEdit);
+        if (staff) staff.pin = val;
+      });
+      closeModal("mod-set-pin");
+      showToast(val ? "PIN atualizado!" : "PIN removido — acesso direto ativado");
     }
 
     function changeAutolock(val) {
@@ -1951,7 +1990,10 @@
       const name = document.getElementById("staff-name").value.trim();
       const pin = document.getElementById("staff-pin").value.trim();
       const role = document.getElementById("staff-role").value;
-      if (!name || pin.length < 4) return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
+      if (!name) return showToast("Introduza o nome do funcionário", "error");
+      if (pin && (pin.length < 4 || pin.length > 6 || !/^\d+$/.test(pin))) {
+        return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
+      }
 
       updateState(() => {
         dbState.staffList.push({
@@ -1983,7 +2025,7 @@
           dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
           dbState.stockProducts = []; dbState.stockMovements = [];
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
-          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "1234", role: "Manager", permissions: {} }];
+          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
           dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
         });
         showToast("Todo o sistema foi reiniciado!");
