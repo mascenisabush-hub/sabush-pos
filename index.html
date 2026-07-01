@@ -124,7 +124,7 @@
     <aside class="w-64 bg-deep border-r border-light flex flex-col flex-shrink-0 hidden md:flex">
       <div class="p-6 border-b border-light">
         <h1 class="text-teal font-bold text-2xl tracking-tighter">SABUSH POS</h1>
-        <p class="text-grey text-xs mt-1 uppercase tracking-widest">Maputo Division</p>
+        <p id="sidebar-business-name" class="text-grey text-xs mt-1 uppercase tracking-widest">Maputo Division</p>
       </div>
       <nav class="flex-grow py-4 overflow-y-auto space-y-1">
         <div class="px-6 mb-2 text-grey text-[10px] uppercase font-semibold tracking-widest">Operação</div>
@@ -300,7 +300,35 @@
         <!-- Page: Settings -->
         <section id="page-settings" class="page-view hidden space-y-6">
           <h1 class="text-xl font-bold text-teal">Definições Gerais</h1>
-          
+
+          <div class="c-card p-5 rounded-xl space-y-4">
+            <h2 class="font-bold text-sm text-gold">Perfil do Negócio</h2>
+            <p class="text-xs text-grey -mt-2">Estes dados aparecem nos recibos, no resumo de fecho (WhatsApp) e na barra lateral.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs text-grey mb-1">Nome do Negócio</label>
+                <input type="text" id="profile-name" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Bar O Cantinho">
+              </div>
+              <div>
+                <label class="block text-xs text-grey mb-1">NUIT</label>
+                <input type="text" id="profile-nuit" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 123456789">
+              </div>
+              <div>
+                <label class="block text-xs text-grey mb-1">Telefone / WhatsApp</label>
+                <input type="text" id="profile-phone" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 84 000 0000">
+              </div>
+              <div>
+                <label class="block text-xs text-grey mb-1">Email</label>
+                <input type="email" id="profile-email" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: gerencia@bar.co.mz">
+              </div>
+              <div class="md:col-span-2">
+                <label class="block text-xs text-grey mb-1">Morada / Endereço</label>
+                <input type="text" id="profile-address" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Av. Julius Nyerere, Maputo">
+              </div>
+            </div>
+            <button onclick="saveBusinessProfile()" class="w-full bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Guardar Perfil do Negócio</button>
+          </div>
+
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="c-card p-5 rounded-xl space-y-4">
               <h2 class="font-bold text-sm text-gold">Gestão de Equipa (PINs)</h2>
@@ -658,6 +686,7 @@
       tables: ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"],
       auditLog: [],
       settings: { autoLockTimer: "never", theme: "dark", syncEnabled: true },
+      businessProfile: { name: "", nuit: "", address: "", phone: "", email: "" },
       updatedAt: Date.now()
     };
 
@@ -813,6 +842,13 @@
       if (settingsStr) {
         try { dbState.settings = JSON.parse(settingsStr); } catch (e) {}
       }
+      // Load business profile
+      const profileStr = localStorage.getItem("sabush_business_profile");
+      if (profileStr) {
+        try { dbState.businessProfile = JSON.parse(profileStr); } catch (e) {}
+      } else if (!dbState.businessProfile) {
+        dbState.businessProfile = { name: "", nuit: "", address: "", phone: "", email: "" };
+      }
       applyThemeSetting();
     }
 
@@ -826,6 +862,7 @@
         localStorage.setItem("sabush_" + k, JSON.stringify(dbState[v]));
       }
       localStorage.setItem("sabush_settings", JSON.stringify(dbState.settings));
+      localStorage.setItem("sabush_business_profile", JSON.stringify(dbState.businessProfile));
     }
 
     function updateState(updater) {
@@ -1041,6 +1078,17 @@
 
       updateHeaderStats();
       renderFooterStats();
+      updateSidebarBusinessName();
+    }
+
+    // Business Profile helpers
+    function getBusinessDisplayName() {
+      return (dbState.businessProfile && dbState.businessProfile.name) ? dbState.businessProfile.name : "Maputo Division";
+    }
+
+    function updateSidebarBusinessName() {
+      const el = document.getElementById("sidebar-business-name");
+      if (el) el.innerText = getBusinessDisplayName();
     }
 
     function updateHeaderStats() {
@@ -1450,7 +1498,7 @@
       receiptText += `-----------------------------\n`;
       receiptText += `*Total Consumo:* ${fmtMoney(subtotal)}\n`;
       receiptText += `Obrigado pela preferência!\n`;
-      receiptText += `Sabush Tech LDA`;
+      receiptText += getBusinessDisplayName();
 
       navigator.clipboard.writeText(receiptText).then(() => {
         showToast("Recibo copiado! Envie no WhatsApp.");
@@ -1735,7 +1783,7 @@
     }
 
     function shareEodWhatsapp() {
-      const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: Sabush Tech LDA\nData: ${fmtDate(Date.now())}\nSessão encerrada por: ${currentStaffUser.name}`;
+      const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: ${getBusinessDisplayName()}\nData: ${fmtDate(Date.now())}\nSessão encerrada por: ${currentStaffUser.name}`;
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
     }
 
@@ -1916,6 +1964,13 @@
       document.getElementById("setting-autolock").value = dbState.settings.autoLockTimer || "never";
       document.getElementById("setting-sync-toggle").checked = dbState.settings.syncEnabled !== false;
 
+      const profile = dbState.businessProfile || { name: "", nuit: "", address: "", phone: "", email: "" };
+      document.getElementById("profile-name").value = profile.name || "";
+      document.getElementById("profile-nuit").value = profile.nuit || "";
+      document.getElementById("profile-phone").value = profile.phone || "";
+      document.getElementById("profile-email").value = profile.email || "";
+      document.getElementById("profile-address").value = profile.address || "";
+
       const container = document.getElementById("staff-settings-list");
       container.innerHTML = dbState.staffList.map(s => `
         <div class="flex justify-between items-center bg-light/30 p-2.5 rounded-lg text-xs">
@@ -1929,6 +1984,21 @@
           </div>
         </div>
       `).join('');
+    }
+
+    function saveBusinessProfile() {
+      const name = document.getElementById("profile-name").value.trim();
+      const nuit = document.getElementById("profile-nuit").value.trim();
+      const phone = document.getElementById("profile-phone").value.trim();
+      const email = document.getElementById("profile-email").value.trim();
+      const address = document.getElementById("profile-address").value.trim();
+
+      if (!name) return showToast("Introduza o nome do negócio", "error");
+
+      updateState(() => {
+        dbState.businessProfile = { name, nuit, phone, email, address };
+      });
+      showToast("Perfil do negócio atualizado!");
     }
 
     // Set / change a staff member's PIN (used by the Manager to configure their own PIN too)
