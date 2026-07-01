@@ -543,6 +543,26 @@
     </div>
   </div>
 
+  <!-- Modal: Restock Product (Add quantity to existing stock) -->
+  <div id="mod-restock" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Adicionar Stock — <span id="restock-prod-name">---</span></div>
+      <div class="text-xs text-grey">Stock atual: <span id="restock-prod-current" class="font-bold text-white">0</span></div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Quantidade a adicionar</label>
+        <input type="number" id="restock-qty" min="1" inputmode="numeric" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 20" onkeypress="if(event.key==='Enter'){confirmRestock();}">
+      </div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Motivo (opcional)</label>
+        <input type="text" id="restock-reason" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Compra ao fornecedor">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-restock')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="confirmRestock()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Adicionar ao Stock</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Add Breakage -->
   <div id="mod-quebra" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
     <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
@@ -1804,7 +1824,7 @@
           <div class="flex justify-between items-center text-sm">
             <span>Preço Venda: <strong class="text-gold font-bold">${p.price} MT</strong></span>
             <div class="flex gap-1.5">
-              <button onclick="restockProduct(${p.id})" class="px-2.5 py-1 bg-teal text-deep rounded text-xs font-bold hover:opacity-90">Restock</button>
+              <button onclick="restockProduct(${p.id})" class="px-2.5 py-1 bg-teal text-deep rounded text-xs font-bold hover:opacity-90">+ Stock</button>
               <button onclick="editProductModal(${p.id})" class="px-2.5 py-1 bg-light rounded text-xs font-medium hover:bg-teal hover:text-deep transition">Editar</button>
             </div>
           </div>
@@ -1812,24 +1832,37 @@
       `).join('');
     }
 
+    let restockProductId = null;
     function restockProduct(id) {
-      const qtyStr = prompt("Quantidade a reabastecer:");
-      if (!qtyStr) return;
-      const amount = parseInt(qtyStr);
+      const prod = dbState.stockProducts.find(p => p.id === id);
+      if (!prod) return;
+      restockProductId = id;
+      document.getElementById("restock-prod-name").innerText = prod.name;
+      document.getElementById("restock-prod-current").innerText = `${prod.qty} ${prod.unit}`;
+      document.getElementById("restock-qty").value = "";
+      document.getElementById("restock-reason").value = "";
+      openModal("mod-restock");
+      setTimeout(() => document.getElementById("restock-qty").focus(), 50);
+    }
+
+    function confirmRestock() {
+      const amount = parseInt(document.getElementById("restock-qty").value);
+      const reason = document.getElementById("restock-reason").value.trim() || "Reabastecimento Manual";
       if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
 
       updateState(() => {
-        const prod = dbState.stockProducts.find(p => p.id === id);
+        const prod = dbState.stockProducts.find(p => p.id === restockProductId);
         if (prod) {
           prod.qty += amount;
           dbState.stockMovements.push({
             id: "mov-" + Date.now(), timestamp: Date.now(),
             prodId: prod.id, prodName: prod.name, qty: amount,
-            type: "in", reason: "Reabastecimento Manual"
+            type: "in", reason
           });
           logAudit("Restock", `Adicionado +${amount} unidades de ${prod.name}`);
         }
       });
+      closeModal("mod-restock");
       showToast("Stock atualizado com sucesso!");
     }
 
