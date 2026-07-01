@@ -1,0 +1,6 @@
+{
+  "name": "Sabush POS",
+  "description": "Sistema de Gestão de Vendas (POS) PWA altamente otimizado para o mercado moçambicano, desenvolvido para a Sabush Tech LDA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

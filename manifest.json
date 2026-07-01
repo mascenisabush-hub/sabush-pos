@@ -1,0 +1,21 @@
+{
+  "name": "Sabush POS",
+  "short_name": "Sabush POS",
+  "description": "Sistema de Gestão de Vendas (POS) PWA altamente otimizado para o mercado moçambicano, desenvolvido para a Sabush Tech LDA.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1628",
+  "theme_color": "#00C9B1",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9114/9114510.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/9114/9114510.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

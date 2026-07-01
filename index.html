@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="pt-PT" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sabush POS</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --navy-deep: #0B1628; --navy-card: #142035; --navy-light: #1a2d47;
+      --teal: #00C9B1; --gold: #F5A623; --grey: #8A9BB5; --white: #F8FAFB; --red: #ff5d5d;
+    }
+    html[data-theme="light"] {
+      --navy-deep: #F0F4F8; --navy-card: #FFFFFF; --navy-light: #E1E8F0;
+      --teal: #00A38E; --gold: #D97706; --grey: #4A5568; --white: #1A202C; --red: #DC2626;
+    }
+    body { background-color: var(--navy-deep); color: var(--white); font-family: 'Inter', sans-serif; transition: all 0.3s; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .c-card { background-color: var(--navy-card); border: 1px solid var(--navy-light); }
+    .c-input { background-color: var(--navy-light); color: var(--white); border: 1px solid var(--navy-light); }
+    .c-input:focus { border-color: var(--teal); outline: none; }
+  </style>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ["'Inter'", 'sans-serif'],
+            mono: ["'JetBrains Mono'", 'monospace']
+          },
+          colors: {
+            deep: 'var(--navy-deep)', card: 'var(--navy-card)', light: 'var(--navy-light)',
+            teal: 'var(--teal)', gold: 'var(--gold)', grey: 'var(--grey)', white: 'var(--white)', brandRed: 'var(--red)'
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen text-white select-none">
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-4 right-4 z-50 hidden items-center p-4 rounded-lg shadow-lg text-white font-medium transition-all transform translate-y-[-20px]"></div>
+
+  <!-- Screen 1: Splash Screen -->
+  <div id="scr-splash" class="fixed inset-0 z-50 flex flex-col justify-center items-center bg-deep">
+    <div class="text-center">
+      <div class="text-4xl font-extrabold text-teal mb-2 tracking-wider">SABUSH POS</div>
+      <div class="text-grey text-sm tracking-widest mb-6">SABUSH TECH LDA</div>
+      <div class="w-48 h-1.5 bg-light rounded-full overflow-hidden">
+        <div id="splash-bar" class="h-full bg-teal w-0 transition-all duration-300"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 2: Firebase Auth Screen -->
+  <div id="scr-auth" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="c-card p-8 rounded-xl max-w-md w-full shadow-2xl">
+      <div class="text-2xl font-bold text-center text-teal mb-6">Sabush Commercial Gate</div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-grey mb-1">EMAIL COMERCIAL</label>
+          <input type="email" id="auth-email" class="c-input w-full p-3 rounded-lg text-sm" placeholder="gerente@sabush.co.mz">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-grey mb-1">PALAVRA-PASSE</label>
+          <input type="password" id="auth-pass" class="c-input w-full p-3 rounded-lg text-sm" placeholder="••••••••">
+        </div>
+        <button onclick="handleEmailAuth('signin')" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Iniciar Sessão</button>
+        <div class="flex justify-between text-xs text-grey">
+          <button onclick="handleForgotPassword()" class="hover:text-teal">Esqueceu a senha?</button>
+          <button onclick="toggleAuthMode()" id="btn-toggle-mode" class="hover:text-teal">Criar Nova Empresa</button>
+        </div>
+        <div class="relative flex py-2 items-center">
+          <div class="flex-grow border-t border-grey/20"></div>
+          <span class="flex-shrink mx-4 text-grey text-xs">OU</span>
+          <div class="flex-grow border-t border-grey/20"></div>
+        </div>
+        <button onclick="handleGoogleAuth()" class="w-full bg-white text-deep font-bold p-3 rounded-lg text-sm flex items-center justify-center gap-2 hover:bg-opacity-95 transition">
+          <img src="https://lh3.googleusercontent.com/COxitSg0gW3sJH23993wLJ6Hzg2LQA9A5-XNisCH0JV78OBshgJsm8Yg781gclgU0F07" class="w-5 h-5" alt="Google">
+          Aceder com o Google
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 3: Staff PIN Picker -->
+  <div id="scr-staff" class="hidden min-h-screen flex flex-col justify-center items-center p-4">
+    <div class="max-w-md w-full text-center">
+      <h2 class="text-2xl font-bold text-teal mb-2">Quem está de serviço?</h2>
+      <p class="text-grey text-sm mb-8">Insira o seu PIN para aceder ao terminal</p>
+      
+      <!-- Staff Profiles List -->
+      <div id="staff-profiles" class="grid grid-cols-2 gap-4 mb-8"></div>
+
+      <!-- PIN Input Pad (Hidden by default, shown when staff profile is clicked) -->
+      <div id="pin-pad-container" class="hidden c-card p-6 rounded-xl shadow-xl animate-fade-in">
+        <div class="flex justify-between items-center mb-6">
+          <span id="pin-staff-name" class="font-bold text-teal">---</span>
+          <button onclick="cancelPinPad()" class="text-xs text-grey hover:text-white">Voltar</button>
+        </div>
+        <div class="flex justify-center gap-3 mb-6">
+          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
+          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
+          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
+          <div class="pin-dot w-3 h-3 rounded-full border border-teal"></div>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <button onclick="pressPin('1')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">1</button>
+          <button onclick="pressPin('2')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">2</button>
+          <button onclick="pressPin('3')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">3</button>
+          <button onclick="pressPin('4')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">4</button>
+          <button onclick="pressPin('5')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">5</button>
+          <button onclick="pressPin('6')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">6</button>
+          <button onclick="pressPin('7')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">7</button>
+          <button onclick="pressPin('8')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">8</button>
+          <button onclick="pressPin('9')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">9</button>
+          <button onclick="clearPin()" class="c-input p-4 rounded-lg text-xs font-bold hover:bg-brandRed transition">LIMPAR</button>
+          <button onclick="pressPin('0')" class="c-input p-4 rounded-lg text-xl font-bold hover:bg-teal hover:text-deep transition">0</button>
+          <button onclick="backspacePin()" class="c-input p-4 rounded-lg text-xs font-bold hover:bg-teal hover:text-deep transition">APAGAR</button>
+        </div>
+      </div>
+
+      <button onclick="signoutFirebase()" class="mt-8 text-xs text-grey hover:text-brandRed transition">Sair da Empresa</button>
+    </div>
+  </div>
+
+  <!-- Screen 4: Main Application -->
+  <div id="scr-main" class="hidden h-screen w-full bg-deep text-white overflow-hidden font-sans flex">
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-deep border-r border-light flex flex-col flex-shrink-0 hidden md:flex">
+      <div class="p-6 border-b border-light">
+        <h1 class="text-teal font-bold text-2xl tracking-tighter">SABUSH POS</h1>
+        <p class="text-grey text-xs mt-1 uppercase tracking-widest">Maputo Division</p>
+      </div>
+      <nav class="flex-grow py-4 overflow-y-auto space-y-1">
+        <div class="px-6 mb-2 text-grey text-[10px] uppercase font-semibold tracking-widest">Operação</div>
+        <button id="nav-btn-tabs" onclick="switchPage('tabs')" class="nav-btn flex items-center px-6 py-3 bg-card text-teal border-l-4 border-teal w-full text-left transition-colors font-bold">
+          <span class="mr-3">🗂️</span> Mesas e Contas
+        </button>
+        <button id="nav-btn-history" onclick="switchPage('history')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">📜</span> Histórico Diário
+        </button>
+
+        <div class="px-6 mt-6 mb-2 text-grey text-[10px] uppercase font-semibold tracking-widest">Gestão</div>
+        <button id="nav-btn-stock" onclick="switchPage('stock')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">📦</span> Inventário / Stock
+        </button>
+        <button id="nav-btn-quebras" onclick="switchPage('quebras')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">⚠️</span> Quebras e Perdas
+        </button>
+        <button id="nav-btn-expenses" onclick="switchPage('expenses')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">💸</span> Despesas
+        </button>
+        <button id="nav-btn-settings" onclick="switchPage('settings')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">⚙️</span> Definições
+        </button>
+      </nav>
+      <div class="p-4 bg-card border-t border-light flex items-center justify-between">
+        <div class="flex items-center">
+          <div id="sidebar-staff-avatar" class="w-8 h-8 rounded-full bg-teal flex items-center justify-center text-deep font-bold mr-3">A</div>
+          <div>
+            <p id="sidebar-staff-name" class="text-xs font-bold text-white">---</p>
+            <p id="sidebar-staff-role" class="text-[10px] text-grey">---</p>
+          </div>
+        </div>
+        <button onclick="lockStaffSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Bloquear Terminal">🚪</button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+      <!-- Top Header -->
+      <header class="h-16 bg-card border-b border-light flex items-center justify-between px-4 md:px-8 flex-shrink-0">
+        <div class="flex items-center gap-4">
+          <!-- Mobile Toggle Logo -->
+          <div class="flex items-center gap-2 md:hidden">
+            <span class="text-lg font-black text-teal tracking-tighter">SABUSH POS</span>
+          </div>
+          <div class="hidden md:flex items-center gap-4">
+            <div class="relative flex items-center">
+              <span id="sync-dot" class="w-2.5 h-2.5 bg-teal rounded-full mr-2 animate-pulse"></span>
+              <span id="sync-text" class="text-sm text-grey font-medium">Online — Sincronizado</span>
+            </div>
+            <div class="h-4 w-px bg-light"></div>
+            <div id="header-date" class="text-sm text-white">---</div>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-4 md:gap-6">
+          <div class="text-right">
+            <p class="text-[10px] text-grey uppercase font-bold tracking-wider">Vendas do Dia</p>
+            <p id="header-revenue" class="text-base md:text-lg font-bold text-gold">0,00 MT</p>
+          </div>
+          <button onclick="toggleTheme()" class="bg-card text-grey hover:text-white border border-light px-3 py-1.5 rounded-lg text-xs font-semibold transition animate-fade-in" title="Alternar Tema">
+            🌓
+          </button>
+          <button onclick="openCreateTabModal()" class="bg-teal text-deep px-4 md:px-6 py-2 rounded-lg font-bold text-xs md:text-sm shadow-lg shadow-teal/20 hover:brightness-110 transition-all">
+            + Nova Conta
+          </button>
+        </div>
+      </header>
+
+      <!-- Mobile Navigation Bar (Only visible on mobile screens) -->
+      <nav class="flex md:hidden bg-card border-b border-light justify-around p-1 flex-shrink-0 overflow-x-auto whitespace-nowrap">
+        <button id="mobile-nav-tabs" onclick="switchPage('tabs')" class="mobile-nav-btn text-xs px-3 py-2 text-teal font-semibold flex flex-col items-center gap-1">
+          <span>🗂️</span><span>Contas</span>
+        </button>
+        <button id="mobile-nav-history" onclick="switchPage('history')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>📜</span><span>Histórico</span>
+        </button>
+        <button id="mobile-nav-stock" onclick="switchPage('stock')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>📦</span><span>Stock</span>
+        </button>
+        <button id="mobile-nav-quebras" onclick="switchPage('quebras')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>⚠️</span><span>Quebras</span>
+        </button>
+        <button id="mobile-nav-expenses" onclick="switchPage('expenses')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>💸</span><span>Despesas</span>
+        </button>
+        <button id="mobile-nav-settings" onclick="switchPage('settings')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>⚙️</span><span>Definições</span>
+        </button>
+        <button onclick="lockStaffSession()" class="text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
+          <span>🚪</span><span>Sair</span>
+        </button>
+      </nav>
+
+      <!-- Main Scrollable Body View -->
+      <div class="flex-1 overflow-y-auto p-4 md:p-6 bg-deep">
+        
+        <!-- Page: Tabs Management -->
+        <section id="page-tabs" class="page-view space-y-4">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <h1 class="text-xl font-bold text-teal">Contas de Clientes</h1>
+            <div class="flex gap-2 w-full sm:w-auto">
+              <input type="text" id="search-tabs" oninput="renderTabs()" class="c-input px-3 py-2 rounded-lg text-sm flex-grow" placeholder="Procurar conta/mesa...">
+            </div>
+          </div>
+          <!-- Tabs Grid -->
+          <div id="tabs-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-fade-in"></div>
+        </section>
+
+        <!-- Page: Daily History -->
+        <section id="page-history" class="page-view hidden space-y-4">
+          <div class="flex justify-between items-center">
+            <h1 class="text-xl font-bold text-teal">Histórico Diário</h1>
+            <div class="flex gap-2">
+              <button onclick="openEodModal()" class="bg-gold text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">Resumo EOD</button>
+              <button onclick="exportHistoryCSV()" class="c-input px-4 py-2 rounded-lg text-sm hover:bg-light transition">Exportar CSV</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">PAGO</div><div id="hist-sum-paid" class="text-2xl font-black text-teal">0,00 MT</div></div>
+            <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">DÍVIDA EM ABERTO</div><div id="hist-sum-debt" class="text-2xl font-black text-brandRed">0,00 MT</div></div>
+            <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">TOTAL RECEITA</div><div id="hist-sum-total" class="text-2xl font-black text-gold">0,00 MT</div></div>
+          </div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Mesa/Conta</th><th class="p-3">Total</th><th class="p-3">Pago</th><th class="p-3">Estado</th><th class="p-3">Ações</th></tr></thead>
+                <tbody id="history-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Page: Stock Management -->
+        <section id="page-stock" class="page-view hidden space-y-4">
+          <div class="flex justify-between items-center">
+            <h1 class="text-xl font-bold text-teal">Gestão de Stock</h1>
+            <button onclick="openAddProductModal()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">+ Novo Produto</button>
+          </div>
+          <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+
+        <!-- Page: Quebras -->
+        <section id="page-quebras" class="page-view hidden space-y-4">
+          <div class="flex justify-between items-center">
+            <h1 class="text-xl font-bold text-teal">Quebras & Perdas</h1>
+            <button onclick="openAddQuebraModal()" class="bg-brandRed text-white font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">Registar Quebra</button>
+          </div>
+          <div class="c-card p-4 rounded-xl text-center max-w-xs"><div class="text-grey text-xs font-semibold tracking-wider">TOTAL QUEBRAS HOJE</div><div id="quebras-today-total" class="text-2xl font-black text-brandRed">0,00 MT</div></div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <table class="w-full text-left text-sm">
+              <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Artigo</th><th class="p-3">Quantidade</th><th class="p-3">Custo Estimado</th><th class="p-3">Motivo</th></tr></thead>
+              <tbody id="quebras-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Page: Expenses -->
+        <section id="page-expenses" class="page-view hidden space-y-4">
+          <div class="flex justify-between items-center">
+            <h1 class="text-xl font-bold text-teal">Despesas diárias</h1>
+            <button onclick="openAddExpenseModal()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition font-bold">Registar Despesa</button>
+          </div>
+          <div class="c-card p-4 rounded-xl text-center max-w-xs"><div class="text-grey text-xs font-semibold tracking-wider">TOTAL DESPESAS HOJE</div><div id="expenses-today-total" class="text-2xl font-black text-brandRed">0,00 MT</div></div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <table class="w-full text-left text-sm">
+              <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Descrição</th><th class="p-3">Categoria</th><th class="p-3">Valor</th></tr></thead>
+              <tbody id="expenses-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Page: Settings -->
+        <section id="page-settings" class="page-view hidden space-y-6">
+          <h1 class="text-xl font-bold text-teal">Definições Gerais</h1>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="c-card p-5 rounded-xl space-y-4">
+              <h2 class="font-bold text-sm text-gold">Gestão de Equipa (PINs)</h2>
+              <div id="staff-settings-list" class="space-y-2"></div>
+              <button onclick="openAddStaffModal()" class="w-full bg-[#142035] border border-[#00C9B1] text-[#00C9B1] text-sm font-semibold p-2 rounded-lg hover:bg-[#00C9B1] hover:text-[#0B1628] transition">Adicionar Funcionário</button>
+            </div>
+
+            <div class="c-card p-5 rounded-xl space-y-4">
+              <h2 class="font-bold text-sm text-gold">Segurança & Sistema</h2>
+              <div>
+                <label class="block text-xs text-grey mb-1">AUTO-BLOQUEIO</label>
+                <select id="setting-autolock" onchange="changeAutolock(this.value)" class="c-input w-full p-2.5 rounded-lg text-sm">
+                  <option value="never">Nunca</option>
+                  <option value="5">Após 5 Minutos</option>
+                  <option value="15">Após 15 Minutos</option>
+                  <option value="30">Após 30 Minutos</option>
+                </select>
+              </div>
+              <div class="flex items-center justify-between p-3 bg-[#142035] border border-[#1a2d47] rounded-lg">
+                <div><div class="text-sm font-semibold">Sincronização em Nuvem</div><div class="text-xs text-grey">Sincronizar em tempo real com Firestore</div></div>
+                <input type="checkbox" id="setting-sync-toggle" onchange="toggleSyncEnabled(this.checked)" class="w-5 h-5 accent-teal" checked>
+              </div>
+              <button onclick="confirmWipeData()" class="w-full bg-brandRed/20 border border-brandRed text-brandRed text-sm font-semibold p-2.5 rounded-lg hover:bg-brandRed hover:text-white transition">Wipe/Limpar Toda Informação</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Quick Stats Footer bar -->
+      <footer class="bg-card h-12 border-t border-light px-4 md:px-8 flex items-center justify-between text-[11px] font-medium tracking-wide text-grey flex-shrink-0">
+        <div class="flex gap-4 md:gap-8 overflow-x-auto">
+          <div class="flex items-center gap-2 whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-teal"></span> <span id="footer-mpesa">M-PESA: 0,00 MT</span>
+          </div>
+          <div class="flex items-center gap-2 whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-gold"></span> <span id="footer-dinheiro">DINHEIRO: 0,00 MT</span>
+          </div>
+          <div class="flex items-center gap-2 whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-white"></span> <span id="footer-cartao">CARTÃO: 0,00 MT</span>
+          </div>
+        </div>
+        <div class="hidden sm:flex gap-4 items-center">
+          <span>v2.4.1 Production</span>
+          <div class="h-3 w-px bg-light"></div>
+          <span class="text-teal font-semibold">Sabush Tech LDA © 2026</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Modal: Create Tab -->
+  <div id="mod-create-tab" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Criar Nova Conta</div>
+      <div><label class="block text-xs text-grey mb-1">Nome do Cliente</label><input type="text" id="new-tab-name" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Mesa</label>
+        <div id="table-chips" class="flex flex-wrap gap-2 py-1"></div>
+      </div>
+      <div><label class="block text-xs text-grey mb-1">Nota adicional</label><input type="text" id="new-tab-note" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Sem cebola, etc."></div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-create-tab')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveNewTab()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Abrir Conta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Tab Detail View (Full-Screen Overlay on mobile) -->
+  <div id="mod-tab-detail" class="hidden fixed inset-0 z-40 bg-deep flex flex-col">
+    <!-- Modal Header -->
+    <header class="c-card py-3 px-4 flex justify-between items-center border-b border-light">
+      <div class="flex items-center gap-3">
+        <div id="detail-tab-color" class="w-3.5 h-3.5 rounded-full bg-teal"></div>
+        <div>
+          <span id="detail-tab-title" class="font-bold text-teal">Conta ---</span>
+          <span id="detail-tab-table" class="text-xs text-grey ml-2 bg-light px-2 py-0.5 rounded-full">---</span>
+        </div>
+      </div>
+      <button onclick="closeModal('mod-tab-detail')" class="text-grey hover:text-white p-1 text-sm font-semibold">Fechar (Voltar)</button>
+    </header>
+
+    <!-- Modal Body Grid -->
+    <div class="flex-grow flex flex-col lg:flex-row overflow-hidden">
+      <!-- Left Panel: Rounds & Item addition -->
+      <div class="flex-grow p-4 overflow-y-auto space-y-4 border-b lg:border-b-0 lg:border-r border-light">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Autocomplete Item Search -->
+          <div class="relative">
+            <label class="block text-xs text-grey mb-1">PESQUISAR ARTIGO</label>
+            <input type="text" id="item-search" oninput="autocompleteItemSearch(this.value)" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Comece a digitar o produto...">
+            <div id="item-search-results" class="hidden absolute top-full left-0 right-0 z-10 c-card rounded-lg mt-1 max-h-48 overflow-y-auto shadow-xl"></div>
+          </div>
+          <!-- Custom Input -->
+          <div class="grid grid-cols-3 gap-2">
+            <div class="col-span-2"><label class="block text-xs text-grey mb-1">ARTIGO AVULSO</label><input type="text" id="item-custom-name" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Nome"></div>
+            <div><label class="block text-xs text-grey mb-1">PREÇO</label><input type="number" id="item-custom-price" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="MT"></div>
+          </div>
+        </div>
+
+        <!-- Quick Items chips -->
+        <div>
+          <div class="text-xs text-grey mb-2">ARTIGOS RÁPIDOS</div>
+          <div id="detail-quick-chips" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- Current Round / Items Draft -->
+        <div class="c-card p-4 rounded-xl space-y-3">
+          <div class="flex justify-between items-center"><span class="text-sm font-bold text-gold">Ronda Corrente (Rascunho)</span><button onclick="clearCurrentRound()" class="text-xs text-brandRed hover:underline">Limpar</button></div>
+          <div id="current-round-list" class="space-y-2 text-sm"></div>
+          <div class="flex justify-end pt-2"><button onclick="saveCurrentRound()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-xs hover:opacity-90">Confirmar & Salvar Ronda</button></div>
+        </div>
+
+        <!-- Saved Locked Rounds -->
+        <div class="space-y-3">
+          <div class="text-sm font-bold text-grey">Rondas de Pedidos Confirmadas</div>
+          <div id="saved-rounds-container" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Totalization & Cashier Payment Controls -->
+      <div class="lg:w-96 p-4 bg-light/20 flex flex-col justify-between overflow-y-auto">
+        <div class="space-y-4">
+          <h3 class="font-bold text-sm text-teal pb-2 border-b border-light">Finalização de Conta</h3>
+          
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between"><span>SUBTOTAL</span><span id="fin-subtotal" class="font-bold">0,00 MT</span></div>
+            <div class="flex justify-between items-center">
+              <span>DESCONTO</span>
+              <div class="flex items-center gap-1.5">
+                <input type="number" id="fin-discount" oninput="recalcTabCheckout()" class="c-input w-16 p-1.5 rounded-lg text-xs text-center" placeholder="0">
+                <select id="fin-discount-type" onchange="recalcTabCheckout()" class="c-input p-1.5 rounded-lg text-xs"><option value="percent">%</option><option value="fixed">MT</option></select>
+              </div>
+            </div>
+            <div class="flex justify-between text-base font-black text-gold border-t border-light pt-2"><span>TOTAL A PAGAR</span><span id="fin-total">0,00 MT</span></div>
+          </div>
+
+          <!-- Register partial payment details -->
+          <div class="c-card p-3 rounded-lg space-y-2.5">
+            <div class="text-xs font-semibold text-grey">REGISTAR PAGAMENTO</div>
+            <div class="grid grid-cols-2 gap-2">
+              <input type="number" id="pay-amount" class="c-input w-full p-2 rounded-lg text-xs" placeholder="Valor MT">
+              <select id="pay-method" class="c-input w-full p-2 rounded-lg text-xs"><option value="Dinheiro">Dinheiro</option><option value="M-Pesa">M-Pesa</option><option value="Cartão">Cartão</option><option value="Outro">Outro</option></select>
+            </div>
+            <button onclick="registerPartialPayment()" class="w-full bg-teal text-deep font-bold p-2 rounded-lg text-xs hover:opacity-90">Inserir Pagamento</button>
+          </div>
+
+          <!-- List of payments received -->
+          <div class="space-y-1.5">
+            <div class="text-xs font-semibold text-grey">PAGAMENTOS EFECTUADOS</div>
+            <div id="received-payments-list" class="space-y-1 max-h-24 overflow-y-auto text-xs"></div>
+          </div>
+
+          <div class="text-xs space-y-1.5 bg-light/50 p-2.5 rounded-lg">
+            <div class="flex justify-between font-semibold"><span>Total Recebido:</span><span id="fin-paid">0,00 MT</span></div>
+            <div class="flex justify-between font-semibold"><span>Troco / Saldo Restante:</span><span id="fin-balance" class="text-gold">0,00 MT</span></div>
+          </div>
+        </div>
+
+        <div class="pt-4 space-y-2">
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="openSplitModal()" class="c-input p-2.5 rounded-lg text-xs font-bold hover:bg-light">Dividir Conta</button>
+            <button onclick="printCheckoutReceipt()" class="c-input p-2.5 rounded-lg text-xs font-bold hover:bg-light">Partilhar Recibo</button>
+          </div>
+          <button onclick="checkoutTabClose()" class="w-full bg-gold text-deep font-black p-3.5 rounded-lg text-sm hover:opacity-90">Fechar Conta & Registar Venda</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Close Unpaid Debtor -->
+  <div id="mod-close-unpaid" class="hidden fixed inset-0 z-50 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-brandRed">Registo de Dívida / Fiado</div>
+      <p class="text-sm text-grey">A conta ainda tem um saldo em falta de <strong id="unpaid-val-warning" class="text-white">---</strong>. Introduza o motivo e dados do devedor.</p>
+      <div><label class="block text-xs text-grey mb-1">Nome/ID do Devedor</label><input type="text" id="unpaid-debtor" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div><label class="block text-xs text-grey mb-1">Nota explicativa (Contacto/Morada)</label><input type="text" id="unpaid-reason" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-close-unpaid')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveUnpaidTabClose()" class="flex-1 bg-brandRed text-white font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Registar Fiado</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Split Bill -->
+  <div id="mod-split" class="hidden fixed inset-0 z-50 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Dividir Conta</div>
+      <div><label class="block text-xs text-grey mb-1">NÚMERO DE PESSOAS</label><input type="number" id="split-people" oninput="calculateSplit()" class="c-input w-full p-2.5 rounded-lg text-sm" value="2"></div>
+      <div class="bg-light p-4 rounded-lg text-center"><div class="text-grey text-xs">VALOR POR PESSOA</div><div id="split-value-result" class="text-2xl font-black text-gold">0,00 MT</div></div>
+      <button onclick="closeModal('mod-split')" class="w-full bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Voltar para Conta</button>
+    </div>
+  </div>
+
+  <!-- Modal: Add/Edit Product -->
+  <div id="mod-product" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Artigo no Catálogo</div>
+      <div><label class="block text-xs text-grey mb-1">Nome do Produto</label><input type="text" id="prod-name" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-grey mb-1">Categoria</label><input type="text" id="prod-category" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Bebidas/Alimentação"></div>
+        <div><label class="block text-xs text-grey mb-1">Unidade de Medida</label><input type="text" id="prod-unit" class="c-input w-full p-2.5 rounded-lg text-sm" value="un"></div>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <div><label class="block text-xs text-grey mb-1">Preço Venda (MT)</label><input type="number" id="prod-price" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+        <div><label class="block text-xs text-grey mb-1">Stock Atual</label><input type="number" id="prod-qty" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+        <div><label class="block text-xs text-grey mb-1">Stock Mínimo</label><input type="number" id="prod-min" class="c-input w-full p-2.5 rounded-lg text-sm" value="10"></div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-product')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveProduct()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Guardar Artigo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Breakage -->
+  <div id="mod-quebra" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-brandRed">Registar Quebra / Perda</div>
+      <div><label class="block text-xs text-grey mb-1">Artigo Danificado</label><input type="text" id="quebra-item" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-grey mb-1">Quantidade</label><input type="number" id="quebra-qty" class="c-input w-full p-2.5 rounded-lg text-sm" value="1"></div>
+        <div><label class="block text-xs text-grey mb-1">Custo Estimado (MT)</label><input type="number" id="quebra-cost" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      </div>
+      <div><label class="block text-xs text-grey mb-1">Motivo / Explicação</label><input type="text" id="quebra-reason" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Garrafa partida pelo cliente"></div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-quebra')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveQuebra()" class="flex-1 bg-brandRed text-white font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Gravar Perda</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add Expense -->
+  <div id="mod-expense" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Registar Despesa Comercial</div>
+      <div><label class="block text-xs text-grey mb-1">Descrição</label><input type="text" id="exp-desc" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Gás, Compra de Limão"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="block text-xs text-grey mb-1">Valor (MT)</label><input type="number" id="exp-amount" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+        <div>
+          <label class="block text-xs text-grey mb-1">Categoria</label>
+          <select id="exp-cat" class="c-input w-full p-2.5 rounded-lg text-sm"><option value="Stock">Stock de Bar</option><option value="Stock de Cozinha">Cozinha</option><option value="Serviços públicos">Água/Luz/Gás</option><option value="Salários">Salários/Staff</option><option value="Outros">Outros</option></select>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-expense')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveExpense()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Gravar Despesa</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: End of Day Summary (EOD) -->
+  <div id="mod-eod" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="text-lg font-bold text-gold">Resumo de Fecho de Caixa</div>
+      <div class="space-y-3 divide-y divide-light text-sm">
+        <div class="pt-2"><div class="text-grey text-xs">VENDAS POR MÉTODO</div><div id="eod-methods" class="space-y-1 font-semibold mt-1"></div></div>
+        <div class="pt-2"><div class="text-grey text-xs">ARTIGOS MAIS VENDIDOS</div><div id="eod-top-items" class="space-y-1 mt-1 font-medium"></div></div>
+        <div class="pt-2"><div class="text-grey text-xs">CLIENTES COM DÍVIDAS EM ABERTO</div><div id="eod-debtors" class="space-y-1 text-brandRed font-semibold mt-1"></div></div>
+      </div>
+      <div class="flex gap-3 pt-4">
+        <button onclick="closeModal('mod-eod')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Fechar</button>
+        <button onclick="shareEodWhatsapp()" class="flex-1 bg-gold text-deep font-black p-2.5 rounded-lg text-sm hover:opacity-90">WhatsApp EOD</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Add/Edit Staff User -->
+  <div id="mod-add-staff" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Adicionar Funcionário</div>
+      <div><label class="block text-xs text-grey mb-1">Nome Completo</label><input type="text" id="staff-name" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div><label class="block text-xs text-grey mb-1">PIN numérico (4-6 dígitos)</label><input type="password" id="staff-pin" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 2580"></div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Função / Cargo</label>
+        <select id="staff-role" onchange="toggleStaffPermissionsUi(this.value)" class="c-input w-full p-2.5 rounded-lg text-sm"><option value="Cashier">Caixa / Funcionário</option><option value="Manager">Gerente / Manager</option></select>
+      </div>
+      <div id="staff-permissions-wrapper" class="space-y-2">
+        <label class="block text-xs text-grey">PERMISSÕES (APENAS PARA CAIXAS)</label>
+        <div class="flex flex-col gap-1.5 text-xs bg-light/30 p-2.5 rounded-lg">
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-open-tabs" checked> Abrir Contas de Clientes</label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-close-tabs" checked> Fechar Contas (Checkout)</label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-apply-discount"> Aplicar Descontos em Vendas</label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-view-history"> Ver Histórico Comercial</label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-view-stock"> Ver / Ajustar Stock</label>
+          <label class="flex items-center gap-2"><input type="checkbox" id="perm-view-expenses"> Ver / Lançar Despesas</label>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-add-staff')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="saveNewStaff()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Gravar Perfil</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Scripts Core Initialization -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const config = {
+      apiKey: "AIzaSyB0LZ42yIPLRMB78HJSfhV2oo_o_bNe3_I",
+      authDomain: "sabush-pos-pwa.firebaseapp.com",
+      projectId: "sabush-pos-pwa",
+      storageBucket: "sabush-pos-pwa.firebasestorage.app",
+      messagingSenderId: "792741935523",
+      appId: "1:792741935523:web:ff520c49b23b0ec5ce0216"
+    };
+
+    const app = initializeApp(config);
+    window._fbAuth = getAuth(app);
+    window._fbDb = getFirestore(app);
+    window._fbMethods = {
+      signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail,
+      signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged,
+      doc, setDoc, getDoc, onSnapshot
+    };
+
+    document.dispatchEvent(new CustomEvent("fb-ready"));
+  </script>
+
+  <!-- Classic Core Business Logic Script -->
+  <script>
+    let dbState = {
+      tabs: [], history: [], resolvedDebts: [],
+      quickItems: [
+        { id: 101, name: "Cerveja 2M", price: 80 }, { id: 102, name: "Cerveja Laurentina", price: 95 },
+        { id: 103, name: "Frango Grelhado", price: 450 }, { id: 104, name: "Batata Frita", price: 150 },
+        { id: 105, name: "Água Mineral", price: 50 }, { id: 106, name: "Coca-Cola", price: 70 }
+      ],
+      staffList: [{ id: "gerente-1", name: "Gerente Geral", pin: "1234", role: "Manager", permissions: {} }],
+      stockProducts: [
+        { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 100, unit: "un", minStock: 20 },
+        { id: 2, name: "Cerveja Laurentina", category: "Bebidas", price: 95, qty: 50, unit: "un", minStock: 10 },
+        { id: 3, name: "Frango Grelhado", category: "Alimentação", price: 450, qty: 30, unit: "dose", minStock: 5 },
+        { id: 4, name: "Batata Frita", category: "Alimentação", price: 150, qty: 40, unit: "dose", minStock: 8 }
+      ],
+      stockMovements: [], quebras: [], expenses: [],
+      tables: ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"],
+      auditLog: [],
+      settings: { autoLockTimer: "never", theme: "dark", syncEnabled: true },
+      updatedAt: Date.now()
+    };
+
+    let currentBusinessUser = null;
+    let currentStaffUser = null;
+    let selectedStaffForPin = null;
+    let pinBuffer = "";
+    let isSyncing = false;
+    let authMode = "signin";
+    let activePage = "tabs";
+    let activeCreateTabTable = "";
+    let currentDetailTab = null;
+    let detailTabPayments = [];
+    let activityTimeout = null;
+
+    // Local Format Helpers
+    function fmtMoney(v) { return Number(v).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MT"; }
+    function fmtDate(t) { return new Date(t).toLocaleString('pt-PT'); }
+
+    // Toast Engine
+    function showToast(msg, type = "info") {
+      const el = document.getElementById("toast");
+      el.innerText = msg;
+      el.className = "fixed top-4 right-4 z-50 flex items-center p-4 rounded-lg shadow-lg text-white font-medium transition-all transform duration-300";
+      if (type === "error") el.classList.add("bg-brandRed");
+      else if (type === "warning") el.classList.add("bg-gold");
+      else el.classList.add("bg-teal", "text-deep");
+      el.classList.remove("hidden");
+      setTimeout(() => el.classList.add("hidden"), 3000);
+    }
+
+    // Modal Manager
+    function openModal(id) {
+      const m = document.getElementById(id);
+      if (m) m.classList.replace("hidden", "flex");
+    }
+    function closeModal(id) {
+      const m = document.getElementById(id);
+      if (m) m.classList.replace("flex", "hidden");
+    }
+
+    // App Initialization
+    document.addEventListener("fb-ready", () => {
+      // Progress Splash bar
+      let prog = 0;
+      const interval = setInterval(() => {
+        prog += 20;
+        document.getElementById("splash-bar").style.width = prog + "%";
+        if (prog >= 100) {
+          clearInterval(interval);
+          document.getElementById("scr-splash").classList.add("opacity-0");
+          setTimeout(() => document.getElementById("scr-splash").classList.add("hidden"), 500);
+          initAuthListener();
+        }
+      }, 100);
+    });
+
+    // Firebase Auth Gateway
+    function initAuthListener() {
+      window._fbMethods.onAuthStateChanged(window._fbAuth, (user) => {
+        if (user) {
+          currentBusinessUser = user;
+          document.getElementById("scr-auth").classList.add("hidden");
+          loadLocalState();
+          document.getElementById("scr-staff").classList.remove("hidden");
+          renderStaffProfiles();
+          if (dbState.settings.syncEnabled) {
+            setupRealtimeSync();
+          }
+        } else {
+          currentBusinessUser = null;
+          currentStaffUser = null;
+          document.getElementById("scr-main").classList.add("hidden");
+          document.getElementById("scr-staff").classList.add("hidden");
+          document.getElementById("scr-auth").classList.remove("hidden");
+        }
+      });
+    }
+
+    // Auth actions
+    async function handleEmailAuth() {
+      const email = document.getElementById("auth-email").value;
+      const pass = document.getElementById("auth-pass").value;
+      if (!email || !pass) return showToast("Preencha todos os campos", "error");
+      try {
+        if (authMode === "signin") {
+          await window._fbMethods.signInWithEmailAndPassword(window._fbAuth, email, pass);
+          showToast("Acesso Comercial Autorizado");
+        } else {
+          await window._fbMethods.createUserWithEmailAndPassword(window._fbAuth, email, pass);
+          showToast("Empresa Registada com Sucesso!");
+        }
+      } catch (err) {
+        showToast("Falha de Autenticação: " + err.message, "error");
+      }
+    }
+
+    async function handleGoogleAuth() {
+      try {
+        const provider = new window._fbMethods.GoogleAuthProvider();
+        await window._fbMethods.signInWithPopup(window._fbAuth, provider);
+        showToast("Sessão Google Iniciada");
+      } catch (err) {
+        showToast("Falha Google Auth: " + err.message, "error");
+      }
+    }
+
+    function signoutFirebase() {
+      window._fbMethods.signOut(window._fbAuth);
+    }
+
+    function toggleAuthMode() {
+      authMode = authMode === "signin" ? "signup" : "signin";
+      document.getElementById("btn-toggle-mode").innerText = authMode === "signin" ? "Criar Nova Empresa" : "Já tenho empresa";
+    }
+
+    async function handleForgotPassword() {
+      const email = document.getElementById("auth-email").value;
+      if (!email) return showToast("Introduza o email primeiro", "error");
+      try {
+        await window._fbMethods.sendPasswordResetEmail(window._fbAuth, email);
+        showToast("Email de recuperação enviado!");
+      } catch (err) {
+        showToast("Erro: " + err.message, "error");
+      }
+    }
+
+    // Offline-First Storage Controllers
+    function loadLocalState() {
+      const keys = ["tabs", "history", "quickItems", "auth_users", "audit_log", "stock_products", "stock_movements", "quebras", "pos_expenses", "pos_tables", "resolved_debts"];
+      const mapping = {
+        tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
+        audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
+        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts"
+      };
+      
+      keys.forEach(k => {
+        const stored = localStorage.getItem("sabush_" + k);
+        if (stored) {
+          try { dbState[mapping[k]] = JSON.parse(stored); } catch (e) {}
+        }
+      });
+      // Load settings
+      const settingsStr = localStorage.getItem("sabush_settings");
+      if (settingsStr) {
+        try { dbState.settings = JSON.parse(settingsStr); } catch (e) {}
+      }
+      applyThemeSetting();
+    }
+
+    function saveLocalState() {
+      const mapping = {
+        tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
+        audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
+        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts"
+      };
+      for (const [k, v] of Object.entries(mapping)) {
+        localStorage.setItem("sabush_" + k, JSON.stringify(dbState[v]));
+      }
+      localStorage.setItem("sabush_settings", JSON.stringify(dbState.settings));
+    }
+
+    function updateState(updater) {
+      updater();
+      dbState.updatedAt = Date.now();
+      saveLocalState();
+      syncLocalToFirestore();
+      renderUI();
+    }
+
+    // Real-time Cloud Sync (Firestore)
+    let unsubscribeSync = null;
+    function setupRealtimeSync() {
+      if (!currentBusinessUser) return;
+      const ref = window._fbMethods.doc(window._fbDb, "pos", currentBusinessUser.uid);
+      unsubscribeSync = window._fbMethods.onSnapshot(ref, (snap) => {
+        if (snap.exists()) {
+          const cloudState = snap.data();
+          if (cloudState.updatedAt > dbState.updatedAt) {
+            dbState = { ...dbState, ...cloudState };
+            saveLocalState();
+            renderUI();
+            showToast("Sincronizado na Nuvem", "info");
+          }
+        }
+      });
+    }
+
+    async function syncLocalToFirestore() {
+      if (!currentBusinessUser || !dbState.settings.syncEnabled) return;
+      setSyncStatus("syncing");
+      try {
+        const ref = window._fbMethods.doc(window._fbDb, "pos", currentBusinessUser.uid);
+        await window._fbMethods.setDoc(ref, dbState);
+        setSyncStatus("online");
+      } catch (err) {
+        setSyncStatus("offline");
+      }
+    }
+
+    function setSyncStatus(status) {
+      const dot = document.getElementById("sync-dot");
+      const text = document.getElementById("sync-text");
+      if (status === "syncing") {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-gold animate-spin";
+        text.innerText = "A sincronizar...";
+      } else if (status === "online") {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-teal animate-pulse";
+        text.innerText = "Online";
+      } else {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-grey";
+        text.innerText = "Modo Offline";
+      }
+    }
+
+    // Audit logs
+    function logAudit(action, details) {
+      dbState.auditLog.unshift({
+        id: "audit-" + Date.now(),
+        timestamp: Date.now(),
+        staffName: currentStaffUser ? currentStaffUser.name : "Sistema",
+        action, details
+      });
+    }
+
+    // PWA Service Worker Inline Register
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').then(() => console.log("PWA SW Online"));
+    }
+
+    // Staff picker login
+    function renderStaffProfiles() {
+      const container = document.getElementById("staff-profiles");
+      container.innerHTML = dbState.staffList.map(s => `
+        <button onclick="selectStaffForLogin('${s.id}')" class="c-card p-4 rounded-xl flex flex-col items-center hover:border-teal transition">
+          <div class="w-12 h-12 rounded-full bg-teal/20 text-teal flex items-center justify-center font-bold text-lg mb-2">${s.name.charAt(0)}</div>
+          <div class="font-bold text-sm text-white">${s.name}</div>
+          <div class="text-xs text-grey">${s.role === "Manager" ? "Gerente" : "Caixa"}</div>
+        </button>
+      `).join('');
+    }
+
+    function selectStaffForLogin(id) {
+      selectedStaffForLoginId = id;
+      selectedStaffForPin = dbState.staffList.find(s => s.id === id);
+      document.getElementById("pin-staff-name").innerText = selectedStaffForPin.name;
+      document.getElementById("staff-profiles").classList.add("hidden");
+      document.getElementById("pin-pad-container").classList.remove("hidden");
+      pinBuffer = "";
+      updatePinDots();
+    }
+
+    function cancelPinPad() {
+      document.getElementById("pin-pad-container").classList.add("hidden");
+      document.getElementById("staff-profiles").classList.remove("hidden");
+    }
+
+    function pressPin(num) {
+      if (pinBuffer.length < 6) {
+        pinBuffer += num;
+        updatePinDots();
+        if (pinBuffer === selectedStaffForPin.pin) {
+          // Success Staff Auth
+          currentStaffUser = selectedStaffForPin;
+          document.getElementById("scr-staff").classList.add("hidden");
+          document.getElementById("scr-main").classList.remove("hidden");
+          document.getElementById("header-staff-name").innerText = currentStaffUser.name;
+          document.getElementById("header-staff-role").innerText = currentStaffUser.role === "Manager" ? "Gerente" : "Operador de Caixa";
+          logAudit("PIN login", `Login efetuado por ${currentStaffUser.name}`);
+          resetActivityTimer();
+          switchPage("tabs");
+          renderUI();
+          showToast(`Sessão aberta como ${currentStaffUser.name}`);
+        } else if (pinBuffer.length >= selectedStaffForPin.pin.length) {
+          showToast("PIN Incorreto", "error");
+          clearPin();
+        }
+      }
+    }
+
+    function updatePinDots() {
+      const dots = document.querySelectorAll(".pin-dot");
+      dots.forEach((dot, i) => {
+        if (i < pinBuffer.length) {
+          dot.classList.add("bg-teal");
+        } else {
+          dot.classList.remove("bg-teal");
+        }
+      });
+    }
+    function clearPin() { pinBuffer = ""; updatePinDots(); }
+    function backspacePin() { pinBuffer = pinBuffer.slice(0, -1); updatePinDots(); }
+
+    function lockStaffSession() {
+      currentStaffUser = null;
+      document.getElementById("scr-main").classList.add("hidden");
+      document.getElementById("scr-staff").classList.remove("hidden");
+      document.getElementById("pin-pad-container").classList.add("hidden");
+      document.getElementById("staff-profiles").classList.remove("hidden");
+    }
+
+    // Auto Lock Controller
+    function resetActivityTimer() {
+      if (activityTimeout) clearTimeout(activityTimeout);
+      if (dbState.settings.autoLockTimer === "never" || !currentStaffUser) return;
+      const mins = parseInt(dbState.settings.autoLockTimer);
+      activityTimeout = setTimeout(() => {
+        lockStaffSession();
+        showToast("Sessão bloqueada por inatividade", "warning");
+      }, mins * 60 * 1000);
+    }
+    ["mousedown", "mousemove", "keypress", "touchstart"].forEach(evt => {
+      window.addEventListener(evt, resetActivityTimer, true);
+    });
+
+    // Theme Switcher
+    function toggleTheme() {
+      const html = document.documentElement;
+      const cur = html.getAttribute("data-theme");
+      const next = cur === "light" ? "dark" : "light";
+      html.setAttribute("data-theme", next);
+      dbState.settings.theme = next;
+      saveLocalState();
+    }
+    function applyThemeSetting() {
+      document.documentElement.setAttribute("data-theme", dbState.settings.theme || "dark");
+    }
+
+    // Page Router
+    function switchPage(pageId) {
+      if (!currentStaffUser) return;
+      
+      // Permissions gating checks
+      if (currentStaffUser.role === "Cashier") {
+        if (pageId === "history" && !currentStaffUser.permissions.view_history) return showToast("Acesso negado", "error");
+        if (pageId === "stock" && !currentStaffUser.permissions.view_stock) return showToast("Acesso negado", "error");
+        if (pageId === "expenses" && !currentStaffUser.permissions.view_expenses) return showToast("Acesso negado", "error");
+      }
+
+      activePage = pageId;
+      document.querySelectorAll(".page-view").forEach(el => el.classList.add("hidden"));
+      const targetPage = document.getElementById("page-" + pageId);
+      if (targetPage) targetPage.classList.remove("hidden");
+      
+      const pages = ['tabs', 'history', 'stock', 'quebras', 'expenses', 'settings'];
+      pages.forEach(p => {
+        const btn = document.getElementById("nav-btn-" + p);
+        if (btn) {
+          if (p === pageId) {
+            btn.className = "nav-btn flex items-center px-6 py-3 bg-[#142035] text-[#00C9B1] border-l-4 border-[#00C9B1] w-full text-left transition-colors font-bold";
+          } else {
+            btn.className = "nav-btn flex items-center px-6 py-3 hover:bg-[#142035] text-[#8A9BB5] border-l-4 border-transparent w-full text-left transition-colors font-medium";
+          }
+        }
+        
+        const mBtn = document.getElementById("mobile-nav-" + p);
+        if (mBtn) {
+          if (p === pageId) {
+            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#00C9B1] font-bold flex flex-col items-center gap-1";
+          } else {
+            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#8A9BB5] font-medium flex flex-col items-center gap-1";
+          }
+        }
+      });
+
+      renderUI();
+    }
+
+    // UI Master Render
+    function renderUI() {
+      if (activePage === "tabs") renderTabs();
+      else if (activePage === "history") renderHistory();
+      else if (activePage === "stock") renderStock();
+      else if (activePage === "quebras") renderQuebras();
+      else if (activePage === "expenses") renderExpenses();
+      else if (activePage === "settings") renderSettings();
+
+      updateHeaderStats();
+      renderFooterStats();
+    }
+
+    function updateHeaderStats() {
+      // Current formatted date in Portuguese
+      const options = { day: 'numeric', month: 'long', year: 'numeric' };
+      const dateStr = new Date().toLocaleDateString('pt-PT', options);
+      const elDate = document.getElementById("header-date");
+      if (elDate) elDate.innerText = dateStr;
+
+      // Revenue: calculate total revenue of the day
+      let sumPaid = 0;
+      dbState.history.forEach(h => {
+        sumPaid += h.paid;
+      });
+      const elRev = document.getElementById("header-revenue");
+      if (elRev) elRev.innerText = fmtMoney(sumPaid);
+
+      // Active user info
+      if (currentStaffUser) {
+        const elStaffName = document.getElementById("sidebar-staff-name");
+        const elStaffRole = document.getElementById("sidebar-staff-role");
+        const elStaffAvatar = document.getElementById("sidebar-staff-avatar");
+
+        if (elStaffName) elStaffName.innerText = currentStaffUser.name;
+        if (elStaffRole) elStaffRole.innerText = currentStaffUser.role === "Manager" ? "Gerente" : "Operador de Caixa";
+        if (elStaffAvatar) {
+          elStaffAvatar.innerText = currentStaffUser.name.charAt(0).toUpperCase();
+        }
+      }
+    }
+
+    function renderFooterStats() {
+      const { mpesa, dinheiro, cartao } = getPaymentMethodTotals();
+      
+      const elMpesa = document.getElementById("footer-mpesa");
+      const elDinheiro = document.getElementById("footer-dinheiro");
+      const elCartao = document.getElementById("footer-cartao");
+      
+      if (elMpesa) elMpesa.innerText = "M-PESA: " + fmtMoney(mpesa);
+      if (elDinheiro) elDinheiro.innerText = "DINHEIRO: " + fmtMoney(dinheiro);
+      if (elCartao) elCartao.innerText = "CARTÃO: " + fmtMoney(cartao);
+    }
+
+    function getPaymentMethodTotals() {
+      const totals = { mpesa: 0, dinheiro: 0, cartao: 0 };
+      dbState.history.forEach(h => {
+        if (h.payments) {
+          h.payments.forEach(p => {
+            const m = String(p.method).toLowerCase();
+            if (m === "m-pesa") totals.mpesa += p.amount;
+            else if (m === "dinheiro") totals.dinheiro += p.amount;
+            else if (m === "cartão" || m === "cartao") totals.cartao += p.amount;
+          });
+        }
+      });
+      return totals;
+    }
+
+    function resolveUnpaidDebtGrid(id) {
+      const h = dbState.history.find(entry => entry.id === id);
+      if (!h) return;
+      const unpaid = h.total - h.paid;
+      if (confirm(`Pretende registar o pagamento total desta dívida no valor de ${fmtMoney(unpaid)} para ${h.tabName}?`)) {
+        resolveUnpaidDebt(id);
+      }
+    }
+
+    // Tab management (Contas)
+    function openCreateTabModal() {
+      document.getElementById("new-tab-name").value = "";
+      document.getElementById("new-tab-note").value = "";
+      activeCreateTabTable = "";
+      renderTableChips();
+      openModal("mod-create-tab");
+    }
+
+    function renderTableChips() {
+      const container = document.getElementById("table-chips");
+      container.innerHTML = dbState.tables.map(t => {
+        const isOccupied = dbState.tabs.some(tab => tab.table === t);
+        return `
+          <button onclick="selectTableChip('${t}')" id="chip-${t}" class="px-3 py-1.5 rounded-full text-xs font-semibold ${isOccupied ? 'bg-brandRed/20 text-brandRed' : 'bg-light text-grey'} hover:bg-teal hover:text-deep transition">
+            ${t} ${isOccupied ? '•' : ''}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function selectTableChip(t) {
+      activeCreateTabTable = t;
+      dbState.tables.forEach(table => {
+        const chip = document.getElementById(`chip-${table}`);
+        if (chip) chip.className = chip.className.replace("bg-teal text-deep", "bg-light text-grey");
+      });
+      document.getElementById(`chip-${t}`).className = "px-3 py-1.5 rounded-full text-xs font-semibold bg-teal text-deep";
+    }
+
+    function saveNewTab() {
+      const name = document.getElementById("new-tab-name").value.trim();
+      if (!name) return showToast("Introduza o nome do cliente", "error");
+      updateState(() => {
+        dbState.tabs.push({
+          id: "tab-" + Date.now(),
+          name,
+          table: activeCreateTabTable,
+          note: document.getElementById("new-tab-note").value.trim(),
+          rounds: [], currentRound: []
+        });
+        logAudit("Criar Conta", `Conta aberta para ${name} (Mesa: ${activeCreateTabTable || "Nenhuma"})`);
+      });
+      closeModal("mod-create-tab");
+      showToast("Conta de cliente aberta com sucesso!");
+    }
+
+    function renderTabs() {
+      const grid = document.getElementById("tabs-grid");
+      const search = document.getElementById("search-tabs").value.toLowerCase();
+      
+      const filtered = dbState.tabs.filter(t => t.name.toLowerCase().includes(search) || (t.table && t.table.toLowerCase().includes(search)));
+      
+      // Render active tabs
+      const tabsHtml = filtered.map(t => {
+        const subtotal = calculateTabTotal(t);
+        
+        // Aggregate items
+        const itemMap = new Map();
+        const addItems = (list) => {
+          if (!list) return;
+          list.forEach(item => {
+            const existing = itemMap.get(item.name);
+            if (existing) {
+              existing.qty += item.qty;
+            } else {
+              itemMap.set(item.name, { name: item.name, qty: item.qty, price: item.price });
+            }
+          });
+        };
+        t.rounds.forEach(addItems);
+        addItems(t.currentRound);
+        const aggregatedItems = Array.from(itemMap.values());
+
+        // Construct aggregated items listing
+        let itemsHtml = '';
+        if (aggregatedItems.length === 0) {
+          itemsHtml = `<p class="text-xs flex justify-between italic text-[#8A9BB5]">Aguardando pedido...</p>`;
+        } else {
+          itemsHtml = aggregatedItems.slice(0, 3).map(item => `
+            <p class="text-xs flex justify-between text-[#F8FAFB]/90">
+              <span>${item.qty}x ${item.name}</span>
+              <span class="text-[#8A9BB5] font-mono">${fmtMoney(item.price * item.qty)}</span>
+            </p>
+          `).join('');
+          if (aggregatedItems.length > 3) {
+            itemsHtml += `<p class="text-[10px] text-[#8A9BB5] italic">+ ${aggregatedItems.length - 3} artigo(s)...</p>`;
+          }
+        }
+
+        // Calculate elapsed time
+        const createdTime = t.createdAt || parseInt(t.id.replace('tab-', '')) || Date.now();
+        const elapsedMins = Math.max(0, Math.floor((Date.now() - createdTime) / 60000));
+        const elapsedStr = elapsedMins < 60 ? `Aberto há ${elapsedMins} min` : `Aberto há ${Math.floor(elapsedMins / 60)}h ${elapsedMins % 60}m`;
+
+        // Rounds badge
+        const totalRounds = t.rounds.length + (t.currentRound.length ? 1 : 0);
+        const roundsBadge = `<span class="px-2 py-0.5 bg-[#00C9B1]/10 text-[#00C9B1] text-[9px] font-extrabold rounded uppercase tracking-wider">${totalRounds} ${totalRounds === 1 ? 'Ronda' : 'Rondas'}</span>`;
+
+        return `
+          <div onclick="openTabDetail('${t.id}')" class="bg-[#142035] border border-[#1a2d47] rounded-xl p-5 hover:border-[#00C9B1] cursor-pointer transition-all flex flex-col gap-4 justify-between min-h-[180px]">
+            <div class="flex justify-between items-start">
+              <div>
+                <h3 class="text-lg font-bold text-[#F8FAFB]">${t.name}</h3>
+                <p class="text-xs font-semibold text-[#8A9BB5] bg-[#1a2d47] px-2 py-0.5 rounded-full inline-block mt-1">${t.table || "Sem mesa"}</p>
+              </div>
+              ${roundsBadge}
+            </div>
+            
+            <div class="space-y-1.5 py-2.5 border-y border-[#1a2d47]">
+              ${itemsHtml}
+            </div>
+            
+            <div class="flex justify-between items-center">
+              <p class="text-[#8A9BB5] text-xs">${elapsedStr}</p>
+              <p class="text-xl font-bold text-[#F5A623] font-mono">${fmtMoney(subtotal)}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Render unresolved debts as alerts on the grid
+      const unpaidEntries = dbState.history.filter(h => h.status === "UNPAID");
+      const debtsHtml = unpaidEntries.map(h => {
+        const remaining = h.total - h.paid;
+        return `
+          <div onclick="resolveUnpaidDebtGrid('${h.id}')" class="bg-[#142035] border border-brandRed/40 rounded-xl p-5 hover:border-brandRed cursor-pointer transition-all flex flex-col gap-4 relative justify-between min-h-[180px]">
+            <div class="absolute -top-2 -right-2 bg-brandRed text-white text-[9px] font-bold px-2 py-1 rounded shadow-lg uppercase tracking-wider">Pendente</div>
+            <div class="flex justify-between items-start">
+              <div>
+                <h3 class="text-lg font-bold text-[#F8FAFB]">${h.tabName}</h3>
+                <p class="text-xs text-[#8A9BB5] italic mt-1">${h.debtor || "Devedor registado"}</p>
+              </div>
+            </div>
+            <div class="space-y-1 py-2 border-y border-[#1a2d47] text-xs text-[#F8FAFB]/90">
+              <p class="flex justify-between"><span>Dívida original:</span> <span class="text-[#8A9BB5] font-mono">${fmtMoney(h.total)}</span></p>
+              <p class="flex justify-between"><span>Valor já pago:</span> <span class="text-[#8A9BB5] font-mono">${fmtMoney(h.paid)}</span></p>
+            </div>
+            <div class="flex justify-between items-center">
+              <p class="text-brandRed text-xs font-bold uppercase tracking-wider">Cobrar Fiado</p>
+              <p class="text-xl font-bold text-[#F5A623] font-mono">${fmtMoney(remaining)}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Add the "Abrir Nova Mesa" Card at the end of the grid
+      const openNewCard = `
+        <div onclick="openCreateTabModal()" class="bg-[#0B1628] border-2 border-dashed border-[#1a2d47] rounded-xl p-5 flex flex-col items-center justify-center gap-2 hover:bg-[#142035] hover:border-[#00C9B1] cursor-pointer transition-all text-[#8A9BB5] group min-h-[180px]">
+          <span class="text-3xl group-hover:scale-110 transition-transform">➕</span>
+          <p class="font-bold text-white/80 group-hover:text-teal transition-colors">Nova Mesa / Conta</p>
+          <p class="text-[9px] uppercase tracking-widest bg-[#142035] px-2 py-0.5 rounded-full font-bold">Abrir Registro</p>
+        </div>
+      `;
+
+      grid.innerHTML = tabsHtml + debtsHtml + openNewCard;
+    }
+
+    function calculateTabTotal(tab) {
+      let tot = 0;
+      tab.rounds.forEach(r => r.forEach(item => tot += item.price * item.qty));
+      tab.currentRound.forEach(item => tot += item.price * item.qty);
+      return tot;
+    }
+
+    // Detail view + checkout inside a tab
+    function openTabDetail(id) {
+      currentDetailTab = dbState.tabs.find(t => t.id === id);
+      detailTabPayments = [];
+      document.getElementById("detail-tab-title").innerText = "Conta: " + currentDetailTab.name;
+      document.getElementById("detail-tab-table").innerText = currentDetailTab.table || "Sem mesa";
+      
+      renderDetailQuickChips();
+      renderCurrentRound();
+      renderSavedRounds();
+      recalcTabCheckout();
+      openModal("mod-tab-detail");
+    }
+
+    function renderDetailQuickChips() {
+      const container = document.getElementById("detail-quick-chips");
+      container.innerHTML = dbState.quickItems.map(item => `
+        <button onclick="addQuickItemToCurrentRound('${item.name}', ${item.price})" class="bg-light px-3 py-1.5 rounded-full text-xs hover:bg-teal hover:text-deep font-semibold transition">
+          ${item.name} — ${item.price} MT
+        </button>
+      `).join('');
+    }
+
+    function addQuickItemToCurrentRound(name, price) {
+      // Check stock
+      const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (prod && prod.qty <= 0) {
+        showToast(`Stock Zero: ${name} está esgotado!`, "warning");
+      }
+      
+      updateState(() => {
+        const item = currentDetailTab.currentRound.find(i => i.name === name);
+        if (item) item.qty++;
+        else currentDetailTab.currentRound.push({ id: Date.now(), name, price, qty: 1 });
+      });
+      renderCurrentRound();
+      recalcTabCheckout();
+    }
+
+    function renderCurrentRound() {
+      const container = document.getElementById("current-round-list");
+      if (currentDetailTab.currentRound.length === 0) {
+        container.innerHTML = `<span class="text-grey text-xs">Sem artigos nesta ronda. Selecione artigos acima.</span>`;
+        return;
+      }
+      container.innerHTML = currentDetailTab.currentRound.map(i => `
+        <div class="flex justify-between items-center p-2 bg-light/30 rounded-lg">
+          <div><span class="font-bold">${i.name}</span> <span class="text-xs text-grey">x${i.qty}</span></div>
+          <div class="flex items-center gap-3">
+            <span class="font-bold text-gold">${fmtMoney(i.price * i.qty)}</span>
+            <button onclick="adjustCurrentRoundQty(${i.id}, -1)" class="w-6 h-6 rounded bg-light hover:bg-brandRed transition">-</button>
+            <button onclick="adjustCurrentRoundQty(${i.id}, 1)" class="w-6 h-6 rounded bg-light hover:bg-teal transition">+</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function adjustCurrentRoundQty(id, diff) {
+      updateState(() => {
+        const item = currentDetailTab.currentRound.find(i => i.id === id);
+        if (item) {
+          item.qty += diff;
+          if (item.qty <= 0) {
+            currentDetailTab.currentRound = currentDetailTab.currentRound.filter(i => i.id !== id);
+          }
+        }
+      });
+      renderCurrentRound();
+      recalcTabCheckout();
+    }
+
+    function clearCurrentRound() {
+      updateState(() => { currentDetailTab.currentRound = []; });
+      renderCurrentRound();
+      recalcTabCheckout();
+    }
+
+    function saveCurrentRound() {
+      if (currentDetailTab.currentRound.length === 0) return showToast("Ronda vazia", "error");
+      updateState(() => {
+        currentDetailTab.rounds.push([...currentDetailTab.currentRound.map(i => ({ ...i }))]);
+        currentDetailTab.currentRound = [];
+      });
+      showToast("Ronda confirmada e enviada para mesa!");
+      renderCurrentRound();
+      renderSavedRounds();
+      recalcTabCheckout();
+    }
+
+    function renderSavedRounds() {
+      const container = document.getElementById("saved-rounds-container");
+      if (currentDetailTab.rounds.length === 0) {
+        container.innerHTML = `<span class="text-grey text-xs">Nenhuma ronda de pedidos guardada nesta conta.</span>`;
+        return;
+      }
+      container.innerHTML = currentDetailTab.rounds.map((round, idx) => `
+        <div class="bg-light/20 p-3 rounded-lg text-xs space-y-1">
+          <div class="flex justify-between items-center font-bold text-teal mb-1">
+            <span>Pedido #${idx + 1}</span>
+            <button onclick="removeSavedRound(${idx})" class="text-brandRed hover:underline">Eliminar</button>
+          </div>
+          ${round.map(i => `
+            <div class="flex justify-between">
+              <span>${i.name} <span class="text-grey">x${i.qty}</span></span>
+              <span>${fmtMoney(i.price * i.qty)}</span>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    }
+
+    function removeSavedRound(idx) {
+      updateState(() => { currentDetailTab.rounds.splice(idx, 1); });
+      renderSavedRounds();
+      recalcTabCheckout();
+    }
+
+    // Autocomplete Product Catalog Search
+    function autocompleteItemSearch(val) {
+      const container = document.getElementById("item-search-results");
+      if (!val) { container.classList.add("hidden"); return; }
+      const matched = dbState.stockProducts.filter(p => p.name.toLowerCase().includes(val.toLowerCase()));
+      if (matched.length === 0) { container.classList.add("hidden"); return; }
+      
+      container.innerHTML = matched.map(p => `
+        <button onclick="selectAutocompleteItem('${p.name}', ${p.price})" class="w-full text-left p-2.5 text-xs font-semibold hover:bg-teal hover:text-deep transition border-b border-light/50 flex justify-between">
+          <span>${p.name}</span>
+          <span class="text-gold">${p.price} MT</span>
+        </button>
+      `).join('');
+      container.classList.remove("hidden");
+    }
+
+    function selectAutocompleteItem(name, price) {
+      addQuickItemToCurrentRound(name, price);
+      document.getElementById("item-search").value = "";
+      document.getElementById("item-search-results").classList.add("hidden");
+    }
+
+    // Bill split calculation
+    function openSplitModal() {
+      calculateSplit();
+      openModal("mod-split");
+    }
+
+    function calculateSplit() {
+      const people = parseInt(document.getElementById("split-people").value) || 2;
+      const subtotal = calculateTabTotal(currentDetailTab);
+      document.getElementById("split-value-result").innerText = fmtMoney(subtotal / people);
+    }
+
+    // Checkout receipts
+    function printCheckoutReceipt() {
+      // Automatically commit any draft items in currentRound first
+      if (currentDetailTab.currentRound && currentDetailTab.currentRound.length > 0) {
+        updateState(() => {
+          currentDetailTab.rounds.push([...currentDetailTab.currentRound.map(i => ({ ...i }))]);
+          currentDetailTab.currentRound = [];
+        });
+        renderCurrentRound();
+        renderSavedRounds();
+      }
+
+      const subtotal = calculateTabTotal(currentDetailTab);
+      let receiptText = `*SABUSH POS - RECIBO*\n`;
+      receiptText += `-----------------------------\n`;
+      receiptText += `Conta: ${currentDetailTab.name}\nMesa: ${currentDetailTab.table || 'Sem mesa'}\n`;
+      receiptText += `Data: ${fmtDate(Date.now())}\n`;
+      receiptText += `-----------------------------\n`;
+      currentDetailTab.rounds.forEach((round, rIdx) => {
+        round.forEach(i => {
+          receiptText += `${i.qty}x ${i.name} - ${fmtMoney(i.price * i.qty)}\n`;
+        });
+      });
+      receiptText += `-----------------------------\n`;
+      receiptText += `*Total Consumo:* ${fmtMoney(subtotal)}\n`;
+      receiptText += `Obrigado pela preferência!\n`;
+      receiptText += `Sabush Tech LDA`;
+
+      navigator.clipboard.writeText(receiptText).then(() => {
+        showToast("Recibo copiado! Envie no WhatsApp.");
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(receiptText)}`, "_blank");
+      });
+    }
+
+    // Partial and Final Payment Controller
+    function registerPartialPayment() {
+      const amt = parseFloat(document.getElementById("pay-amount").value);
+      const method = document.getElementById("pay-method").value;
+      if (isNaN(amt) || amt <= 0) return showToast("Valor inválido", "error");
+      
+      detailTabPayments.push({ amount: amt, method });
+      document.getElementById("pay-amount").value = "";
+      renderReceivedPayments();
+      recalcTabCheckout();
+    }
+
+    function renderReceivedPayments() {
+      const list = document.getElementById("received-payments-list");
+      list.innerHTML = detailTabPayments.map((p, idx) => `
+        <div class="flex justify-between items-center p-1 bg-light/30 rounded">
+          <span>${p.method}</span>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-teal">${fmtMoney(p.amount)}</span>
+            <button onclick="removePartialPayment(${idx})" class="text-brandRed hover:underline">x</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function removePartialPayment(idx) {
+      detailTabPayments.splice(idx, 1);
+      renderReceivedPayments();
+      recalcTabCheckout();
+    }
+
+    function recalcTabCheckout() {
+      const subtotal = calculateTabTotal(currentDetailTab);
+      const discVal = parseFloat(document.getElementById("fin-discount").value) || 0;
+      const discType = document.getElementById("fin-discount-type").value;
+      
+      let discount = 0;
+      if (discType === "percent") {
+        discount = subtotal * (discVal / 100);
+      } else {
+        discount = discVal;
+      }
+
+      const finalTotal = Math.max(0, subtotal - discount);
+      const paid = detailTabPayments.reduce((acc, curr) => acc + curr.amount, 0);
+      const balance = paid - finalTotal;
+
+      document.getElementById("fin-subtotal").innerText = fmtMoney(subtotal);
+      document.getElementById("fin-total").innerText = fmtMoney(finalTotal);
+      document.getElementById("fin-paid").innerText = fmtMoney(paid);
+      document.getElementById("fin-balance").innerText = fmtMoney(balance);
+    }
+
+    function checkoutTabClose() {
+      const subtotal = calculateTabTotal(currentDetailTab);
+      const discVal = parseFloat(document.getElementById("fin-discount").value) || 0;
+      const discType = document.getElementById("fin-discount-type").value;
+      
+      let discount = 0;
+      if (discType === "percent") discount = subtotal * (discVal / 100);
+      else discount = discVal;
+
+      const finalTotal = Math.max(0, subtotal - discount);
+      const paid = detailTabPayments.reduce((acc, curr) => acc + curr.amount, 0);
+
+      if (paid < finalTotal) {
+        // Gating Check
+        if (currentStaffUser.role === "Cashier" && !currentStaffUser.permissions.close_tabs) {
+          return showToast("Falta permissão para fechar fiado", "error");
+        }
+        document.getElementById("unpaid-val-warning").innerText = fmtMoney(finalTotal - paid);
+        document.getElementById("unpaid-debtor").value = currentDetailTab.name;
+        document.getElementById("unpaid-reason").value = "";
+        openModal("mod-close-unpaid");
+      } else {
+        closeTabFinalized("PAID", finalTotal, paid, "", "");
+      }
+    }
+
+    function saveUnpaidTabClose() {
+      const debtor = document.getElementById("unpaid-debtor").value.trim();
+      const reason = document.getElementById("unpaid-reason").value.trim();
+      if (!debtor) return showToast("Identifique o devedor", "error");
+
+      const subtotal = calculateTabTotal(currentDetailTab);
+      const discVal = parseFloat(document.getElementById("fin-discount").value) || 0;
+      const discType = document.getElementById("fin-discount-type").value;
+      
+      let discount = 0;
+      if (discType === "percent") discount = subtotal * (discVal / 100);
+      else discount = discVal;
+
+      const finalTotal = Math.max(0, subtotal - discount);
+      const paid = detailTabPayments.reduce((acc, curr) => acc + curr.amount, 0);
+
+      closeModal("mod-close-unpaid");
+      closeTabFinalized("UNPAID", finalTotal, paid, debtor, reason);
+    }
+
+    function closeTabFinalized(status, finalTotal, paid, debtor, reason) {
+      updateState(() => {
+        // Automatically commit any draft items in currentRound first
+        if (currentDetailTab.currentRound && currentDetailTab.currentRound.length > 0) {
+          currentDetailTab.rounds.push([...currentDetailTab.currentRound.map(i => ({ ...i }))]);
+          currentDetailTab.currentRound = [];
+        }
+
+        // Process stock deduction
+        currentDetailTab.rounds.forEach(round => {
+          round.forEach(item => {
+            const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
+            if (prod) {
+              prod.qty -= item.qty;
+              dbState.stockMovements.push({
+                id: "mov-" + Date.now(), timestamp: Date.now(),
+                prodId: prod.id, prodName: prod.name, qty: -item.qty,
+                type: "out", reason: "Venda na Conta " + currentDetailTab.name
+              });
+              if (prod.qty <= prod.minStock) {
+                showToast(`Alerta: ${prod.name} com stock crítico (${prod.qty} ${prod.unit})`, "warning");
+              }
+            }
+          });
+        });
+
+        // Add to history with detailed items sold
+        dbState.history.push({
+          id: "hist-" + Date.now(),
+          timestamp: Date.now(),
+          tabName: currentDetailTab.name,
+          table: currentDetailTab.table,
+          total: finalTotal,
+          paid,
+          status,
+          debtor,
+          reason,
+          payments: [...detailTabPayments],
+          items: currentDetailTab.rounds.flatMap(r => r.map(i => ({ name: i.name, qty: i.qty, price: i.price })))
+        });
+
+        // Filter out closed tab
+        dbState.tabs = dbState.tabs.filter(t => t.id !== currentDetailTab.id);
+        logAudit("Fechar Conta", `Conta de ${currentDetailTab.name} fechada como ${status}. Total: ${fmtMoney(finalTotal)}`);
+      });
+
+      closeModal("mod-tab-detail");
+      showToast(`Venda registada com sucesso (${status})`);
+    }
+
+    // Daily History Logic
+    function renderHistory() {
+      const tbody = document.getElementById("history-table-body");
+      
+      let sumPaid = 0, sumDebt = 0;
+      dbState.history.forEach(h => {
+        sumPaid += h.paid;
+        if (h.status === "UNPAID") sumDebt += (h.total - h.paid);
+      });
+
+      document.getElementById("hist-sum-paid").innerText = fmtMoney(sumPaid);
+      document.getElementById("hist-sum-debt").innerText = fmtMoney(sumDebt);
+      document.getElementById("hist-sum-total").innerText = fmtMoney(sumPaid + sumDebt);
+
+      tbody.innerHTML = dbState.history.map(h => {
+        const remaining = h.total - h.paid;
+        return `
+          <tr class="border-b border-light/50 hover:bg-light/20 transition">
+            <td class="p-3">${fmtDate(h.timestamp)}</td>
+            <td class="p-3 font-semibold">${h.tabName} ${h.table ? '('+h.table+')' : ''}</td>
+            <td class="p-3 font-bold">${fmtMoney(h.total)}</td>
+            <td class="p-3 text-teal font-semibold">${fmtMoney(h.paid)}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-xs font-bold ${h.status === 'PAID' ? 'bg-teal/20 text-teal' : 'bg-brandRed/20 text-brandRed'}">
+                ${h.status === 'PAID' ? 'Pago' : 'Fiado'}
+              </span>
+            </td>
+            <td class="p-3">
+              ${h.status === 'UNPAID' ? `<button onclick="resolveUnpaidDebt('${h.id}')" class="text-xs text-gold hover:underline font-bold">Cobrar Dívida</button>` : '—'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function resolveUnpaidDebt(id) {
+      updateState(() => {
+        const h = dbState.history.find(entry => entry.id === id);
+        if (h) {
+          const unpaid = h.total - h.paid;
+          dbState.resolvedDebts.push({ id: "res-" + Date.now(), timestamp: Date.now(), histId: id, debtor: h.debtor, amount: unpaid });
+          h.paid = h.total;
+          h.status = "PAID";
+          logAudit("Cobrar Dívida", `Dívida de ${h.debtor} resolvida no valor de ${fmtMoney(unpaid)}`);
+          showToast(`Dívida resolvida com sucesso!`);
+        }
+      });
+    }
+
+    function exportHistoryCSV() {
+      const headers = ["Data", "Cliente/Mesa", "Total", "Pago", "Estado", "Devedor", "Artigos Vendidos"];
+      const rows = dbState.history.map(h => {
+        const itemsStr = h.items ? h.items.map(i => `${i.qty}x ${i.name}`).join(" | ") : "";
+        return [
+          fmtDate(h.timestamp),
+          h.tabName + (h.table ? " ("+h.table+")" : ""),
+          h.total, h.paid, h.status, h.debtor || "",
+          itemsStr
+        ];
+      });
+      exportToCSV(headers, rows, "Sabush_Historico_POS.csv");
+    }
+
+    function exportToCSV(headers, rows, filename) {
+      let csv = "data:text/csv;charset=utf-8,\uFEFF";
+      csv += headers.join(",") + "\n";
+      rows.forEach(r => csv += r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",") + "\n");
+      const encoded = encodeURI(csv);
+      const link = document.createElement("a");
+      link.setAttribute("href", encoded);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // EOD End-of-Day Summary Modal
+    function openEodModal() {
+      // Methods aggregation safely case-insensitive
+      const methods = { Dinheiro: 0, "M-Pesa": 0, "Cartão": 0, Outro: 0 };
+      const topItems = {};
+      const debtors = [];
+
+      dbState.history.forEach(h => {
+        if (h.payments) {
+          h.payments.forEach(p => {
+            const m = String(p.method).toLowerCase();
+            if (m === "dinheiro") methods["Dinheiro"] += p.amount;
+            else if (m === "m-pesa") methods["M-Pesa"] += p.amount;
+            else if (m === "cartão" || m === "cartao") methods["Cartão"] += p.amount;
+            else methods["Outro"] += p.amount;
+          });
+        }
+        if (h.status === "UNPAID") {
+          debtors.push({ debtor: h.debtor, debt: h.total - h.paid });
+        }
+        if (h.items) {
+          h.items.forEach(item => {
+            topItems[item.name] = (topItems[item.name] || 0) + item.qty;
+          });
+        }
+      });
+
+      // Render details
+      document.getElementById("eod-methods").innerHTML = Object.entries(methods).map(([k, v]) => `
+        <div class="flex justify-between"><span>${k}</span><span>${fmtMoney(v)}</span></div>
+      `).join('');
+
+      // Render dynamic Real Top Selling Items
+      const sortedTop = Object.entries(topItems).sort((a, b) => b[1] - a[1]);
+      const topItemsHtml = sortedTop.length === 0 
+        ? '<div class="text-xs text-grey">Nenhuma venda registada hoje</div>' 
+        : sortedTop.slice(0, 3).map(([name, qty], idx) => `
+          <div class="flex justify-between">
+            <span>${idx + 1}. ${name}</span>
+            <span class="text-gold font-bold">${qty} un</span>
+          </div>
+        `).join('');
+      document.getElementById("eod-top-items").innerHTML = topItemsHtml;
+
+      document.getElementById("eod-debtors").innerHTML = debtors.length === 0 ? '<div class="text-xs text-teal">Sem fiados registados hoje</div>' : debtors.map(d => `
+        <div class="flex justify-between"><span>${d.debtor}</span><span>${fmtMoney(d.debt)}</span></div>
+      `).join('');
+
+      openModal("mod-eod");
+    }
+
+    function shareEodWhatsapp() {
+      const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: Sabush Tech LDA\nData: ${fmtDate(Date.now())}\nSessão encerrada por: ${currentStaffUser.name}`;
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+    }
+
+    // Stock management
+    function renderStock() {
+      const container = document.getElementById("stock-grid");
+      container.innerHTML = dbState.stockProducts.map(p => `
+        <div class="c-card p-5 rounded-xl space-y-3">
+          <div class="flex justify-between items-start">
+            <div>
+              <div class="font-bold text-base text-teal">${p.name}</div>
+              <div class="text-xs text-grey">${p.category}</div>
+            </div>
+            <span class="px-2.5 py-1 rounded text-xs font-bold ${p.qty <= p.minStock ? 'bg-brandRed/20 text-brandRed animate-pulse' : 'bg-teal/20 text-teal'}">
+              Qtd: ${p.qty} ${p.unit}
+            </span>
+          </div>
+          <div class="flex justify-between items-center text-sm">
+            <span>Preço Venda: <strong class="text-gold font-bold">${p.price} MT</strong></span>
+            <div class="flex gap-1.5">
+              <button onclick="restockProduct(${p.id})" class="px-2.5 py-1 bg-teal text-deep rounded text-xs font-bold hover:opacity-90">Restock</button>
+              <button onclick="editProductModal(${p.id})" class="px-2.5 py-1 bg-light rounded text-xs font-medium hover:bg-teal hover:text-deep transition">Editar</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function restockProduct(id) {
+      const qtyStr = prompt("Quantidade a reabastecer:");
+      if (!qtyStr) return;
+      const amount = parseInt(qtyStr);
+      if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
+
+      updateState(() => {
+        const prod = dbState.stockProducts.find(p => p.id === id);
+        if (prod) {
+          prod.qty += amount;
+          dbState.stockMovements.push({
+            id: "mov-" + Date.now(), timestamp: Date.now(),
+            prodId: prod.id, prodName: prod.name, qty: amount,
+            type: "in", reason: "Reabastecimento Manual"
+          });
+          logAudit("Restock", `Adicionado +${amount} unidades de ${prod.name}`);
+        }
+      });
+      showToast("Stock atualizado com sucesso!");
+    }
+
+    let editProductId = null;
+    function openAddProductModal() {
+      editProductId = null;
+      document.getElementById("prod-name").value = "";
+      document.getElementById("prod-category").value = "";
+      document.getElementById("prod-unit").value = "un";
+      document.getElementById("prod-price").value = "";
+      document.getElementById("prod-qty").value = "";
+      document.getElementById("prod-min").value = "10";
+      openModal("mod-product");
+    }
+
+    function editProductModal(id) {
+      editProductId = id;
+      const p = dbState.stockProducts.find(prod => prod.id === id);
+      document.getElementById("prod-name").value = p.name;
+      document.getElementById("prod-category").value = p.category;
+      document.getElementById("prod-unit").value = p.unit;
+      document.getElementById("prod-price").value = p.price;
+      document.getElementById("prod-qty").value = p.qty;
+      document.getElementById("prod-min").value = p.minStock;
+      openModal("mod-product");
+    }
+
+    function saveProduct() {
+      const name = document.getElementById("prod-name").value.trim();
+      const price = parseFloat(document.getElementById("prod-price").value);
+      const qty = parseInt(document.getElementById("prod-qty").value) || 0;
+      if (!name || isNaN(price)) return showToast("Dados em falta", "error");
+
+      updateState(() => {
+        if (editProductId) {
+          const prod = dbState.stockProducts.find(p => p.id === editProductId);
+          prod.name = name; prod.category = document.getElementById("prod-category").value;
+          prod.unit = document.getElementById("prod-unit").value; prod.price = price;
+          prod.qty = qty; prod.minStock = parseInt(document.getElementById("prod-min").value);
+        } else {
+          dbState.stockProducts.push({
+            id: Date.now(), name, category: document.getElementById("prod-category").value,
+            unit: document.getElementById("prod-unit").value, price, qty,
+            minStock: parseInt(document.getElementById("prod-min").value) || 10
+          });
+        }
+      });
+      closeModal("mod-product");
+      showToast("Artigo catalogado");
+    }
+
+    // Quebras logger
+    function renderQuebras() {
+      const tbody = document.getElementById("quebras-table-body");
+      let tot = 0;
+      dbState.quebras.forEach(q => tot += q.qty * q.cost);
+      document.getElementById("quebras-today-total").innerText = fmtMoney(tot);
+      
+      tbody.innerHTML = dbState.quebras.map(q => `
+        <tr class="border-b border-light/50 text-xs">
+          <td class="p-3">${fmtDate(q.timestamp)}</td>
+          <td class="p-3 font-semibold">${q.item}</td>
+          <td class="p-3">${q.qty}</td>
+          <td class="p-3 font-bold text-brandRed">${fmtMoney(q.qty * q.cost)}</td>
+          <td class="p-3 text-grey">${q.reason}</td>
+        </tr>
+      `).join('');
+    }
+
+    function openAddQuebraModal() {
+      document.getElementById("quebra-item").value = "";
+      document.getElementById("quebra-qty").value = "1";
+      document.getElementById("quebra-cost").value = "";
+      document.getElementById("quebra-reason").value = "";
+      openModal("mod-quebra");
+    }
+
+    function saveQuebra() {
+      const item = document.getElementById("quebra-item").value.trim();
+      const qty = parseInt(document.getElementById("quebra-qty").value) || 1;
+      const cost = parseFloat(document.getElementById("quebra-cost").value) || 0;
+      const reason = document.getElementById("quebra-reason").value.trim();
+      if (!item) return showToast("Indique o artigo", "error");
+
+      updateState(() => {
+        dbState.quebras.push({ id: Date.now(), timestamp: Date.now(), item, qty, cost, reason });
+        logAudit("Perdas/Quebras", `Registo de quebra de ${qty}x ${item}`);
+      });
+      closeModal("mod-quebra");
+      showToast("Perda gravada");
+    }
+
+    // Expenses logger
+    function renderExpenses() {
+      const tbody = document.getElementById("expenses-table-body");
+      let tot = 0;
+      dbState.expenses.forEach(e => tot += e.amount);
+      document.getElementById("expenses-today-total").innerText = fmtMoney(tot);
+
+      tbody.innerHTML = dbState.expenses.map(e => `
+        <tr class="border-b border-light/50 text-xs">
+          <td class="p-3">${fmtDate(e.timestamp)}</td>
+          <td class="p-3 font-semibold">${e.desc}</td>
+          <td class="p-3 text-grey">${e.cat}</td>
+          <td class="p-3 font-bold text-brandRed">${fmtMoney(e.amount)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function openAddExpenseModal() {
+      document.getElementById("exp-desc").value = "";
+      document.getElementById("exp-amount").value = "";
+      openModal("mod-expense");
+    }
+
+    function saveExpense() {
+      const desc = document.getElementById("exp-desc").value.trim();
+      const amount = parseFloat(document.getElementById("exp-amount").value);
+      const cat = document.getElementById("exp-cat").value;
+      if (!desc || isNaN(amount)) return showToast("Dados incorretos", "error");
+
+      updateState(() => {
+        dbState.expenses.push({ id: Date.now(), timestamp: Date.now(), desc, amount, cat });
+        logAudit("Despesas", `Lançamento de despesa comercial: ${desc} (${fmtMoney(amount)})`);
+      });
+      closeModal("mod-expense");
+      showToast("Despesa registada");
+    }
+
+    // Settings
+    function renderSettings() {
+      document.getElementById("setting-autolock").value = dbState.settings.autoLockTimer || "never";
+      document.getElementById("setting-sync-toggle").checked = dbState.settings.syncEnabled !== false;
+
+      const container = document.getElementById("staff-settings-list");
+      container.innerHTML = dbState.staffList.map(s => `
+        <div class="flex justify-between items-center bg-light/30 p-2.5 rounded-lg text-xs">
+          <div>
+            <div class="font-bold text-white">${s.name}</div>
+            <div class="text-grey">${s.role === "Manager" ? "Gerente" : "Caixa PIN: " + s.pin}</div>
+          </div>
+          ${s.role !== "Manager" ? `<button onclick="deleteStaff('${s.id}')" class="text-brandRed hover:underline">Remover</button>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function changeAutolock(val) {
+      dbState.settings.autoLockTimer = val;
+      saveLocalState();
+      resetActivityTimer();
+    }
+
+    function toggleSyncEnabled(val) {
+      dbState.settings.syncEnabled = val;
+      saveLocalState();
+      if (val) {
+        setupRealtimeSync();
+      } else if (unsubscribeSync) {
+        unsubscribeSync();
+      }
+    }
+
+    function openAddStaffModal() {
+      document.getElementById("staff-name").value = "";
+      document.getElementById("staff-pin").value = "";
+      document.getElementById("staff-role").value = "Cashier";
+      toggleStaffPermissionsUi("Cashier");
+      openModal("mod-add-staff");
+    }
+
+    function toggleStaffPermissionsUi(role) {
+      const wrapper = document.getElementById("staff-permissions-wrapper");
+      if (role === "Manager") wrapper.classList.add("hidden");
+      else wrapper.classList.remove("hidden");
+    }
+
+    function saveNewStaff() {
+      const name = document.getElementById("staff-name").value.trim();
+      const pin = document.getElementById("staff-pin").value.trim();
+      const role = document.getElementById("staff-role").value;
+      if (!name || pin.length < 4) return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
+
+      updateState(() => {
+        dbState.staffList.push({
+          id: "staff-" + Date.now(),
+          name, pin, role,
+          permissions: {
+            open_tabs: document.getElementById("perm-open-tabs").checked,
+            close_tabs: document.getElementById("perm-close-tabs").checked,
+            apply_discount: document.getElementById("perm-apply-discount").checked,
+            view_history: document.getElementById("perm-view-history").checked,
+            view_stock: document.getElementById("perm-view-stock").checked,
+            view_expenses: document.getElementById("perm-view-expenses").checked
+          }
+        });
+      });
+      closeModal("mod-add-staff");
+      showToast("Funcionário registado!");
+    }
+
+    function deleteStaff(id) {
+      updateState(() => {
+        dbState.staffList = dbState.staffList.filter(s => s.id !== id);
+      });
+    }
+
+    function confirmWipeData() {
+      if (confirm("TEM A CERTEZA QUE DESEJA APAGAR TODOS OS DADOS DO SISTEMA?\nEsta acção é irreversível.")) {
+        updateState(() => {
+          dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
+          dbState.stockProducts = []; dbState.stockMovements = [];
+          dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
+          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "1234", role: "Manager", permissions: {} }];
+          dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
+        });
+        showToast("Todo o sistema foi reiniciado!");
+        lockStaffSession();
+      }
+    }
+  </script>
+</body>
+</html>
