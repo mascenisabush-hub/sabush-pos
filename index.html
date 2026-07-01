@@ -666,6 +666,7 @@
     let currentDetailTab = null;
     let detailTabPayments = [];
     let activityTimeout = null;
+    let selectedStaffForLoginId = null;
 
     // Local Format Helpers
     function fmtMoney(v) { return Number(v).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MT"; }
@@ -918,8 +919,6 @@
           currentStaffUser = selectedStaffForPin;
           document.getElementById("scr-staff").classList.add("hidden");
           document.getElementById("scr-main").classList.remove("hidden");
-          document.getElementById("header-staff-name").innerText = currentStaffUser.name;
-          document.getElementById("header-staff-role").innerText = currentStaffUser.role === "Manager" ? "Gerente" : "Operador de Caixa";
           logAudit("PIN login", `Login efetuado por ${currentStaffUser.name}`);
           resetActivityTimer();
           switchPage("tabs");
