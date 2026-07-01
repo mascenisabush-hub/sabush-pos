@@ -15,6 +15,11 @@ async function startServer() {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+    // Allow the Firebase Google Sign-In popup to communicate back to this window.
+    // Without this, Chrome's default Cross-Origin-Opener-Policy isolates the popup,
+    // forcing Firebase to fall back to slow polling to detect it closed - causing the
+    // blank "sabush-pos-pwa.firebaseapp.com/__/auth/handler" popup to linger on screen.
+    res.header('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     if (req.method === 'OPTIONS') {
       return res.sendStatus(200);
     }
