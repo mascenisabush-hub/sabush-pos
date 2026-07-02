@@ -1281,6 +1281,20 @@
       const val = parseFloat(document.getElementById("close-shift-balance").value);
       if (isNaN(val) || val < 0) return showToast("Introduza o saldo de fecho contado", "error");
 
+      // Extra safety: closing a shift is final (no reopen), so mirror the Wipe Data
+      // pattern and require the operator to re-enter their PIN before it's locked in.
+      // Staff without a PIN configured yet (e.g. first-time manager) are unaffected.
+      let pinReconfirmed = false;
+      if (currentStaffUser && currentStaffUser.pin) {
+        const pin = prompt(`Confirme o seu PIN (${currentStaffUser.name}) para fechar o turno definitivamente:`);
+        if (pin === null) return; // cancelled — modal stays open, nothing changed
+        if (pin.trim() !== currentStaffUser.pin) {
+          showToast("PIN incorreto. Fecho de turno cancelado.", "error");
+          return;
+        }
+        pinReconfirmed = true;
+      }
+
       const cashSales = getCashSalesForShift(currentShift);
       const cashDebts = getCashDebtsForShift(currentShift);
       const expected = currentShift.openingBalance + cashSales + cashDebts;
@@ -1294,7 +1308,7 @@
         currentShift.expectedCash = expected;
         currentShift.difference = difference;
         currentShift.status = "closed";
-        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}`);
+        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}${pinReconfirmed ? " (PIN confirmado)" : ""}`);
       });
 
       const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
