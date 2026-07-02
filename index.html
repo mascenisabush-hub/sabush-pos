@@ -2507,19 +2507,33 @@
     }
 
     function confirmWipeData() {
-      if (confirm("TEM A CERTEZA QUE DESEJA APAGAR TODOS OS DADOS DO SISTEMA?\nEsta acção é irreversível.")) {
-        updateState(() => {
-          dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
-          dbState.stockProducts = []; dbState.stockMovements = [];
-          dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
-          dbState.shifts = [];
-          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
-          dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
-        });
-        currentShift = null;
-        showToast("Todo o sistema foi reiniciado!");
-        lockStaffSession();
+      if (!confirm("TEM A CERTEZA QUE DESEJA APAGAR TODOS OS DADOS DO SISTEMA?\nEsta acção é irreversível.")) return;
+
+      if (!currentStaffUser || !currentStaffUser.pin) {
+        showToast("Defina primeiro um PIN para a sua conta (Configurações) para poder confirmar esta ação.", "error");
+        return;
       }
+
+      const pin = prompt(`Confirmação final — introduza o seu PIN (${currentStaffUser.name}) para apagar todos os dados:`);
+      if (pin === null) return; // cancelled
+      if (pin.trim() !== currentStaffUser.pin) {
+        showToast("PIN incorreto. Operação cancelada.", "error");
+        return;
+      }
+
+      const wipedBy = currentStaffUser.name;
+      updateState(() => {
+        dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
+        dbState.stockProducts = []; dbState.stockMovements = [];
+        dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
+        dbState.shifts = [];
+        dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
+        dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
+      });
+      logAudit("Wipe de Dados", `Todos os dados do sistema foram apagados por ${wipedBy} (PIN confirmado)`);
+      currentShift = null;
+      showToast("Todo o sistema foi reiniciado!");
+      lockStaffSession();
     }
   </script>
 </body>
