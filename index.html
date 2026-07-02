@@ -58,8 +58,9 @@
 
   <!-- Screen 2: Firebase Auth Screen -->
   <div id="scr-auth" class="hidden min-h-screen flex items-center justify-center p-4">
-    <div class="c-card p-8 rounded-xl max-w-md w-full shadow-2xl">
-      <div class="text-2xl font-bold text-center text-teal mb-6">Sabush Commercial Gate</div>
+    <div class="c-card p-8 rounded-xl max-w-md w-full shadow-2xl relative">
+      <button id="auth-back-btn" onclick="toggleAuthMode()" class="hidden absolute top-4 left-4 items-center gap-1.5 text-grey hover:text-teal text-sm font-semibold transition"><span>←</span> Voltar</button>
+      <div id="auth-title" class="text-2xl font-bold text-center text-teal mb-6">Sabush Commercial Gate</div>
       <div class="space-y-4">
         <div>
           <label class="block text-xs font-semibold text-grey mb-1">EMAIL COMERCIAL</label>
@@ -94,7 +95,8 @@
 
   <!-- Screen 3: Staff PIN Picker -->
   <div id="scr-staff" class="hidden min-h-screen flex flex-col justify-center items-center p-4">
-    <div class="max-w-md w-full text-center">
+    <div class="max-w-md w-full text-center relative">
+      <button onclick="signoutFirebase()" class="absolute -top-6 left-0 flex items-center gap-1.5 text-grey hover:text-brandRed text-sm font-semibold transition"><span>←</span> Voltar</button>
       <h2 class="text-2xl font-bold text-teal mb-2">Quem está de serviço?</h2>
       <p class="text-grey text-sm mb-8">Insira o seu PIN para aceder ao terminal</p>
       
@@ -157,7 +159,7 @@
             <p id="sidebar-staff-role" class="text-[10px] text-grey">---</p>
           </div>
         </div>
-        <button onclick="lockStaffSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Bloquear Terminal">🚪</button>
+        <button onclick="attemptEndSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Fechar Turno / Sair">🚪</button>
       </div>
     </aside>
 
@@ -214,14 +216,19 @@
         <button id="mobile-nav-settings" onclick="switchPage('settings')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>⚙️</span><span>Definições</span>
         </button>
-        <button onclick="lockStaffSession()" class="text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
+        <button onclick="attemptEndSession()" class="text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
           <span>🚪</span><span>Sair</span>
         </button>
       </nav>
 
       <!-- Main Scrollable Body View -->
       <div class="flex-1 overflow-y-auto p-4 md:p-6 bg-deep">
-        
+
+        <!-- Global Back Button: goes to Contas de Clientes from any other page, or ends the shift/session from there -->
+        <button onclick="handleGlobalBack()" class="mb-3 flex items-center gap-1.5 text-grey hover:text-teal text-sm font-semibold transition">
+          <span>←</span> Voltar
+        </button>
+
         <!-- Page: Tabs Management -->
         <section id="page-tabs" class="page-view space-y-4">
           <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -563,6 +570,39 @@
     </div>
   </div>
 
+  <!-- Modal: Open Shift (Opening Cash Balance) - shown right after staff login -->
+  <div id="mod-open-shift" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-teal">Abertura de Turno</div>
+      <p class="text-xs text-grey">Olá, <span id="open-shift-staff-name" class="font-semibold text-white">---</span>. Introduza o valor em dinheiro com que está a iniciar a caixa.</p>
+      <div>
+        <label class="block text-xs text-grey mb-1">Saldo de Abertura (MT)</label>
+        <input type="number" id="open-shift-balance" min="0" step="0.01" inputmode="decimal" class="c-input w-full p-3 rounded-lg text-lg text-center font-mono" placeholder="0.00" onkeypress="if(event.key==='Enter'){confirmOpenShift();}">
+      </div>
+      <button onclick="confirmOpenShift()" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Iniciar Turno</button>
+    </div>
+  </div>
+
+  <!-- Modal: Close Shift (Closing Cash Balance + Reconciliation) - shown when staff leaves -->
+  <div id="mod-close-shift" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-gold">Fecho de Turno — <span id="close-shift-staff-name">---</span></div>
+      <div class="space-y-1.5 text-sm bg-light/30 p-3 rounded-lg">
+        <div class="flex justify-between"><span class="text-grey">Saldo de Abertura</span><span id="close-shift-opening" class="font-semibold">0,00 MT</span></div>
+        <div class="flex justify-between"><span class="text-grey">Vendas em Dinheiro</span><span id="close-shift-cash-sales" class="font-semibold text-teal">0,00 MT</span></div>
+        <div class="flex justify-between border-t border-light pt-1.5 mt-1"><span class="text-grey">Saldo Esperado</span><span id="close-shift-expected" class="font-bold text-gold">0,00 MT</span></div>
+      </div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Saldo de Fecho (Contagem Real, MT)</label>
+        <input type="number" id="close-shift-balance" min="0" step="0.01" inputmode="decimal" class="c-input w-full p-3 rounded-lg text-lg text-center font-mono" placeholder="0.00" onkeypress="if(event.key==='Enter'){confirmCloseShift();}">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="cancelCloseShift()" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="confirmCloseShift()" class="flex-1 bg-gold text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Confirmar Fecho</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Add Breakage -->
   <div id="mod-quebra" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
     <div class="c-card p-6 rounded-xl max-w-md w-full shadow-2xl space-y-4">
@@ -705,6 +745,7 @@
       stockMovements: [], quebras: [], expenses: [],
       tables: ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"],
       auditLog: [],
+      shifts: [],
       settings: { autoLockTimer: "never", theme: "dark", syncEnabled: true },
       businessProfile: { name: "", nuit: "", address: "", phone: "", email: "" },
       updatedAt: Date.now()
@@ -712,6 +753,7 @@
 
     let currentBusinessUser = null;
     let currentStaffUser = null;
+    let currentShift = null;
     let selectedStaffForPin = null;
     let isSyncing = false;
     let authMode = "signin";
@@ -829,6 +871,14 @@
     function toggleAuthMode() {
       authMode = authMode === "signin" ? "signup" : "signin";
       document.getElementById("btn-toggle-mode").innerText = authMode === "signin" ? "Criar Nova Empresa" : "Já tenho empresa";
+      const backBtn = document.getElementById("auth-back-btn");
+      if (authMode === "signup") {
+        backBtn.classList.remove("hidden");
+        backBtn.classList.add("flex");
+      } else {
+        backBtn.classList.add("hidden");
+        backBtn.classList.remove("flex");
+      }
     }
 
     async function handleForgotPassword() {
@@ -844,11 +894,12 @@
 
     // Offline-First Storage Controllers
     function loadLocalState() {
-      const keys = ["tabs", "history", "quickItems", "auth_users", "audit_log", "stock_products", "stock_movements", "quebras", "pos_expenses", "pos_tables", "resolved_debts"];
+      const keys = ["tabs", "history", "quickItems", "auth_users", "audit_log", "stock_products", "stock_movements", "quebras", "pos_expenses", "pos_tables", "resolved_debts", "shifts"];
       const mapping = {
         tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
         audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
-        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts"
+        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts",
+        shifts: "shifts"
       };
       
       keys.forEach(k => {
@@ -857,6 +908,7 @@
           try { dbState[mapping[k]] = JSON.parse(stored); } catch (e) {}
         }
       });
+      if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
       // Load settings
       const settingsStr = localStorage.getItem("sabush_settings");
       if (settingsStr) {
@@ -876,7 +928,8 @@
       const mapping = {
         tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
         audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
-        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts"
+        quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts",
+        shifts: "shifts"
       };
       for (const [k, v] of Object.entries(mapping)) {
         localStorage.setItem("sabush_" + k, JSON.stringify(dbState[v]));
@@ -903,6 +956,12 @@
           const cloudState = snap.data();
           if (cloudState.updatedAt > dbState.updatedAt) {
             dbState = { ...dbState, ...cloudState };
+            if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
+            // currentShift held a reference into the old shifts array - re-point it
+            // to the matching record in the freshly merged array so edits still apply.
+            if (currentShift) {
+              currentShift = dbState.shifts.find(s => s.id === currentShift.id) || currentShift;
+            }
             saveLocalState();
             renderUI();
             showToast("Sincronizado na Nuvem", "info");
@@ -1003,21 +1062,133 @@
     function loginAsStaff(staff) {
       currentStaffUser = staff;
       document.getElementById("pin-pad-container").classList.add("hidden");
+      logAudit(staff.pin ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
+
+      const openShift = dbState.shifts.find(s => s.staffId === staff.id && s.status === "open");
+      if (openShift) {
+        currentShift = openShift;
+        enterMainApp();
+      } else {
+        promptOpenShift();
+      }
+    }
+
+    function promptOpenShift() {
+      document.getElementById("open-shift-staff-name").innerText = currentStaffUser.name;
+      document.getElementById("open-shift-balance").value = "";
+      openModal("mod-open-shift");
+      setTimeout(() => document.getElementById("open-shift-balance").focus(), 50);
+    }
+
+    function confirmOpenShift() {
+      const val = parseFloat(document.getElementById("open-shift-balance").value);
+      if (isNaN(val) || val < 0) return showToast("Introduza um saldo de abertura válido", "error");
+
+      updateState(() => {
+        const shift = {
+          id: "shift-" + Date.now(),
+          staffId: currentStaffUser.id,
+          staffName: currentStaffUser.name,
+          openedAt: Date.now(),
+          openingBalance: val,
+          closedAt: null,
+          closingBalance: null,
+          cashSales: 0,
+          expectedCash: null,
+          difference: null,
+          status: "open"
+        };
+        dbState.shifts.push(shift);
+        currentShift = shift;
+        logAudit("Abertura de Turno", `${currentStaffUser.name} abriu turno com saldo de ${fmtMoney(val)}`);
+      });
+      closeModal("mod-open-shift");
+      enterMainApp();
+    }
+
+    function enterMainApp() {
       document.getElementById("scr-staff").classList.add("hidden");
       document.getElementById("scr-main").classList.remove("hidden");
-      logAudit(staff.pin ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
       resetActivityTimer();
       switchPage("tabs");
       renderUI();
       showToast(`Sessão aberta como ${currentStaffUser.name}`);
     }
 
+    // Quick lock: used for inactivity auto-lock. Does NOT close the shift -
+    // staff simply re-enters their PIN to resume where they left off.
     function lockStaffSession() {
       currentStaffUser = null;
       document.getElementById("scr-main").classList.add("hidden");
       document.getElementById("scr-staff").classList.remove("hidden");
       document.getElementById("pin-pad-container").classList.add("hidden");
       document.getElementById("staff-profiles").classList.remove("hidden");
+      renderStaffProfiles();
+    }
+
+    // Deliberate "leave terminal" action (door icon / back button on the home page).
+    // If the staff member has an open shift, they must count and confirm their
+    // closing cash balance first so the system can calculate their sales.
+    function attemptEndSession() {
+      if (currentShift && currentShift.status === "open") {
+        promptCloseShift();
+      } else {
+        lockStaffSession();
+      }
+    }
+
+    function getCashSalesForShift(shift) {
+      let total = 0;
+      dbState.history.forEach(h => {
+        if (h.staffId === shift.staffId && h.timestamp >= shift.openedAt && h.payments) {
+          h.payments.forEach(p => {
+            if (String(p.method).toLowerCase() === "dinheiro") total += p.amount;
+          });
+        }
+      });
+      return total;
+    }
+
+    function promptCloseShift() {
+      const cashSales = getCashSalesForShift(currentShift);
+      const expected = currentShift.openingBalance + cashSales;
+      document.getElementById("close-shift-staff-name").innerText = currentShift.staffName;
+      document.getElementById("close-shift-opening").innerText = fmtMoney(currentShift.openingBalance);
+      document.getElementById("close-shift-cash-sales").innerText = fmtMoney(cashSales);
+      document.getElementById("close-shift-expected").innerText = fmtMoney(expected);
+      document.getElementById("close-shift-balance").value = "";
+      openModal("mod-close-shift");
+      setTimeout(() => document.getElementById("close-shift-balance").focus(), 50);
+    }
+
+    function confirmCloseShift() {
+      const val = parseFloat(document.getElementById("close-shift-balance").value);
+      if (isNaN(val) || val < 0) return showToast("Introduza o saldo de fecho contado", "error");
+
+      const cashSales = getCashSalesForShift(currentShift);
+      const expected = currentShift.openingBalance + cashSales;
+      const difference = Math.round((val - expected) * 100) / 100;
+
+      updateState(() => {
+        currentShift.closedAt = Date.now();
+        currentShift.closingBalance = val;
+        currentShift.cashSales = cashSales;
+        currentShift.expectedCash = expected;
+        currentShift.difference = difference;
+        currentShift.status = "closed";
+        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Diferença: ${fmtMoney(difference)}`);
+      });
+
+      const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
+      showToast(`Turno fechado. Vendas: ${fmtMoney(cashSales)}. ${diffMsg}`, difference < 0 ? "error" : "success");
+
+      closeModal("mod-close-shift");
+      currentShift = null;
+      lockStaffSession();
+    }
+
+    function cancelCloseShift() {
+      closeModal("mod-close-shift");
     }
 
     // Auto Lock Controller
@@ -1085,6 +1256,16 @@
       });
 
       renderUI();
+    }
+
+    // Global back button: from any sub-page, return to Contas de Clientes (home).
+    // From the home page itself, "back" means leaving the terminal (closes the shift if one is open).
+    function handleGlobalBack() {
+      if (activePage !== "tabs") {
+        switchPage("tabs");
+      } else {
+        attemptEndSession();
+      }
     }
 
     // UI Master Render
@@ -1655,6 +1836,8 @@
         dbState.history.push({
           id: "hist-" + Date.now(),
           timestamp: Date.now(),
+          staffId: currentStaffUser ? currentStaffUser.id : null,
+          staffName: currentStaffUser ? currentStaffUser.name : "Sistema",
           tabName: currentDetailTab.name,
           table: currentDetailTab.table,
           total: finalTotal,
@@ -2128,9 +2311,11 @@
           dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
           dbState.stockProducts = []; dbState.stockMovements = [];
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
+          dbState.shifts = [];
           dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
           dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
         });
+        currentShift = null;
         showToast("Todo o sistema foi reiniciado!");
         lockStaffSession();
       }
