@@ -263,6 +263,20 @@
               </table>
             </div>
           </div>
+
+          <!-- Dívidas Cobradas: every debt payment is recorded here with who collected it, when, and by which method -->
+          <div class="flex justify-between items-center pt-2">
+            <h2 class="text-sm font-bold text-gold uppercase tracking-wider">Dívidas Cobradas (Fiado)</h2>
+            <div id="hist-sum-debts-collected" class="text-sm font-bold text-gold">Total: 0,00 MT</div>
+          </div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Devedor</th><th class="p-3">Valor</th><th class="p-3">Método</th><th class="p-3">Cobrado por</th></tr></thead>
+                <tbody id="resolved-debts-table-body"></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <!-- Page: Stock Management -->
@@ -590,6 +604,7 @@
       <div class="space-y-1.5 text-sm bg-light/30 p-3 rounded-lg">
         <div class="flex justify-between"><span class="text-grey">Saldo de Abertura</span><span id="close-shift-opening" class="font-semibold">0,00 MT</span></div>
         <div class="flex justify-between"><span class="text-grey">Vendas em Dinheiro</span><span id="close-shift-cash-sales" class="font-semibold text-teal">0,00 MT</span></div>
+        <div class="flex justify-between"><span class="text-grey">Dívidas Cobradas em Dinheiro</span><span id="close-shift-cash-debts" class="font-semibold text-gold">0,00 MT</span></div>
         <div class="flex justify-between border-t border-light pt-1.5 mt-1"><span class="text-grey">Saldo Esperado</span><span id="close-shift-expected" class="font-bold text-gold">0,00 MT</span></div>
       </div>
       <div>
@@ -599,6 +614,31 @@
       <div class="flex gap-3 pt-2">
         <button onclick="cancelCloseShift()" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
         <button onclick="confirmCloseShift()" class="flex-1 bg-gold text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Confirmar Fecho</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Resolve Debt (Cobrar Dívida) - captures payment method so it counts correctly in cash reconciliation -->
+  <div id="mod-resolve-debt" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-gold">Cobrar Dívida — <span id="resolve-debt-name">---</span></div>
+      <p class="text-xs text-grey">Dívida em aberto: <span id="resolve-debt-unpaid" class="font-semibold text-white">0,00 MT</span></p>
+      <div>
+        <label class="block text-xs text-grey mb-1">Valor Recebido (MT)</label>
+        <input type="number" id="resolve-debt-amount" min="0" step="0.01" inputmode="decimal" class="c-input w-full p-2.5 rounded-lg text-sm">
+      </div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Método de Pagamento</label>
+        <select id="resolve-debt-method" class="c-input w-full p-2.5 rounded-lg text-sm">
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="M-Pesa">M-Pesa</option>
+          <option value="Cartão">Cartão</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('mod-resolve-debt')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="confirmResolveDebt()" class="flex-1 bg-gold text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Registar Pagamento</button>
       </div>
     </div>
   </div>
@@ -645,6 +685,7 @@
       <div class="text-lg font-bold text-gold">Resumo de Fecho de Caixa</div>
       <div class="space-y-3 divide-y divide-light text-sm">
         <div class="pt-2"><div class="text-grey text-xs">VENDAS POR MÉTODO</div><div id="eod-methods" class="space-y-1 font-semibold mt-1"></div></div>
+        <div class="pt-2"><div class="text-grey text-xs">DÍVIDAS COBRADAS POR MÉTODO</div><div id="eod-debts-collected" class="space-y-1 font-semibold mt-1 text-gold"></div></div>
         <div class="pt-2"><div class="text-grey text-xs">ARTIGOS MAIS VENDIDOS</div><div id="eod-top-items" class="space-y-1 mt-1 font-medium"></div></div>
         <div class="pt-2"><div class="text-grey text-xs">CLIENTES COM DÍVIDAS EM ABERTO</div><div id="eod-debtors" class="space-y-1 text-brandRed font-semibold mt-1"></div></div>
       </div>
@@ -1149,12 +1190,25 @@
       return total;
     }
 
+    // Debts collected (from "Cobrar Dívida") during this shift by this staff member, cash only
+    function getCashDebtsForShift(shift) {
+      let total = 0;
+      dbState.resolvedDebts.forEach(r => {
+        if (r.staffId === shift.staffId && r.timestamp >= shift.openedAt && String(r.method).toLowerCase() === "dinheiro") {
+          total += r.amount;
+        }
+      });
+      return total;
+    }
+
     function promptCloseShift() {
       const cashSales = getCashSalesForShift(currentShift);
-      const expected = currentShift.openingBalance + cashSales;
+      const cashDebts = getCashDebtsForShift(currentShift);
+      const expected = currentShift.openingBalance + cashSales + cashDebts;
       document.getElementById("close-shift-staff-name").innerText = currentShift.staffName;
       document.getElementById("close-shift-opening").innerText = fmtMoney(currentShift.openingBalance);
       document.getElementById("close-shift-cash-sales").innerText = fmtMoney(cashSales);
+      document.getElementById("close-shift-cash-debts").innerText = fmtMoney(cashDebts);
       document.getElementById("close-shift-expected").innerText = fmtMoney(expected);
       document.getElementById("close-shift-balance").value = "";
       openModal("mod-close-shift");
@@ -1166,21 +1220,23 @@
       if (isNaN(val) || val < 0) return showToast("Introduza o saldo de fecho contado", "error");
 
       const cashSales = getCashSalesForShift(currentShift);
-      const expected = currentShift.openingBalance + cashSales;
+      const cashDebts = getCashDebtsForShift(currentShift);
+      const expected = currentShift.openingBalance + cashSales + cashDebts;
       const difference = Math.round((val - expected) * 100) / 100;
 
       updateState(() => {
         currentShift.closedAt = Date.now();
         currentShift.closingBalance = val;
         currentShift.cashSales = cashSales;
+        currentShift.cashDebtsCollected = cashDebts;
         currentShift.expectedCash = expected;
         currentShift.difference = difference;
         currentShift.status = "closed";
-        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Diferença: ${fmtMoney(difference)}`);
+        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}`);
       });
 
       const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
-      showToast(`Turno fechado. Vendas: ${fmtMoney(cashSales)}. ${diffMsg}`, difference < 0 ? "error" : "success");
+      showToast(`Turno fechado. Vendas: ${fmtMoney(cashSales)}. Dívidas: ${fmtMoney(cashDebts)}. ${diffMsg}`, difference < 0 ? "error" : "success");
 
       closeModal("mod-close-shift");
       currentShift = null;
@@ -1348,15 +1404,6 @@
       return totals;
     }
 
-    function resolveUnpaidDebtGrid(id) {
-      const h = dbState.history.find(entry => entry.id === id);
-      if (!h) return;
-      const unpaid = h.total - h.paid;
-      if (confirm(`Pretende registar o pagamento total desta dívida no valor de ${fmtMoney(unpaid)} para ${h.tabName}?`)) {
-        resolveUnpaidDebt(id);
-      }
-    }
-
     // Tab management (Contas)
     function openCreateTabModal() {
       document.getElementById("new-tab-name").value = "";
@@ -1483,7 +1530,7 @@
       const debtsHtml = unpaidEntries.map(h => {
         const remaining = h.total - h.paid;
         return `
-          <div onclick="resolveUnpaidDebtGrid('${h.id}')" class="bg-[#142035] border border-brandRed/40 rounded-xl p-5 hover:border-brandRed cursor-pointer transition-all flex flex-col gap-4 relative justify-between min-h-[180px]">
+          <div onclick="openResolveDebtModal('${h.id}')" class="bg-[#142035] border border-brandRed/40 rounded-xl p-5 hover:border-brandRed cursor-pointer transition-all flex flex-col gap-4 relative justify-between min-h-[180px]">
             <div class="absolute -top-2 -right-2 bg-brandRed text-white text-[9px] font-bold px-2 py-1 rounded shadow-lg uppercase tracking-wider">Pendente</div>
             <div class="flex justify-between items-start">
               <div>
@@ -1886,25 +1933,79 @@
               </span>
             </td>
             <td class="p-3">
-              ${h.status === 'UNPAID' ? `<button onclick="resolveUnpaidDebt('${h.id}')" class="text-xs text-gold hover:underline font-bold">Cobrar Dívida</button>` : '—'}
+              ${h.status === 'UNPAID' ? `<button onclick="openResolveDebtModal('${h.id}')" class="text-xs text-gold hover:underline font-bold">Cobrar Dívida</button>` : '—'}
             </td>
           </tr>
         `;
       }).join('');
+
+      renderResolvedDebts();
     }
 
-    function resolveUnpaidDebt(id) {
+    function renderResolvedDebts() {
+      const tbody = document.getElementById("resolved-debts-table-body");
+      if (!tbody) return;
+      const sorted = [...dbState.resolvedDebts].sort((a, b) => b.timestamp - a.timestamp);
+      const total = sorted.reduce((sum, r) => sum + r.amount, 0);
+      document.getElementById("hist-sum-debts-collected").innerText = "Total: " + fmtMoney(total);
+
+      if (sorted.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-grey text-xs">Nenhuma dívida cobrada ainda.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = sorted.map(r => `
+        <tr class="border-b border-light/50 hover:bg-light/20 transition">
+          <td class="p-3">${fmtDate(r.timestamp)}</td>
+          <td class="p-3 font-semibold">${r.debtor || '—'}</td>
+          <td class="p-3 font-bold text-gold">${fmtMoney(r.amount)}</td>
+          <td class="p-3">${r.method || '—'}</td>
+          <td class="p-3 text-grey">${r.staffName || '—'}</td>
+        </tr>
+      `).join('');
+    }
+
+    let debtIdForResolve = null;
+    function openResolveDebtModal(id) {
+      const h = dbState.history.find(entry => entry.id === id);
+      if (!h) return;
+      const unpaid = h.total - h.paid;
+      debtIdForResolve = id;
+      document.getElementById("resolve-debt-name").innerText = h.debtor || h.tabName;
+      document.getElementById("resolve-debt-unpaid").innerText = fmtMoney(unpaid);
+      document.getElementById("resolve-debt-amount").value = unpaid.toFixed(2);
+      document.getElementById("resolve-debt-amount").max = unpaid.toFixed(2);
+      document.getElementById("resolve-debt-method").value = "Dinheiro";
+      openModal("mod-resolve-debt");
+      setTimeout(() => document.getElementById("resolve-debt-amount").focus(), 50);
+    }
+
+    function confirmResolveDebt() {
+      const h = dbState.history.find(entry => entry.id === debtIdForResolve);
+      if (!h) return;
+      const unpaid = h.total - h.paid;
+      const amount = parseFloat(document.getElementById("resolve-debt-amount").value);
+      const method = document.getElementById("resolve-debt-method").value;
+      if (isNaN(amount) || amount <= 0) return showToast("Introduza um valor válido", "error");
+      if (amount > unpaid + 0.01) return showToast("Valor superior à dívida em aberto", "error");
+
       updateState(() => {
-        const h = dbState.history.find(entry => entry.id === id);
-        if (h) {
-          const unpaid = h.total - h.paid;
-          dbState.resolvedDebts.push({ id: "res-" + Date.now(), timestamp: Date.now(), histId: id, debtor: h.debtor, amount: unpaid });
-          h.paid = h.total;
-          h.status = "PAID";
-          logAudit("Cobrar Dívida", `Dívida de ${h.debtor} resolvida no valor de ${fmtMoney(unpaid)}`);
-          showToast(`Dívida resolvida com sucesso!`);
-        }
+        h.paid = Math.round((h.paid + amount) * 100) / 100;
+        if (h.paid >= h.total - 0.01) h.status = "PAID";
+        dbState.resolvedDebts.push({
+          id: "res-" + Date.now(),
+          timestamp: Date.now(),
+          histId: h.id,
+          debtor: h.debtor || h.tabName,
+          amount,
+          method,
+          staffId: currentStaffUser ? currentStaffUser.id : null,
+          staffName: currentStaffUser ? currentStaffUser.name : "Sistema"
+        });
+        logAudit("Cobrar Dívida", `Pagamento de ${fmtMoney(amount)} (${method}) de ${h.debtor || h.tabName} registado por ${currentStaffUser ? currentStaffUser.name : "Sistema"}`);
       });
+      closeModal("mod-resolve-debt");
+      showToast(`Pagamento de dívida registado (${method})!`);
     }
 
     function exportHistoryCSV() {
@@ -1966,6 +2067,22 @@
         <div class="flex justify-between"><span>${k}</span><span>${fmtMoney(v)}</span></div>
       `).join('');
 
+      // Debts collected ("Cobrar Dívida") by method - recorded separately from fresh sales
+      const debtMethods = { Dinheiro: 0, "M-Pesa": 0, "Cartão": 0, Outro: 0 };
+      dbState.resolvedDebts.forEach(r => {
+        const m = String(r.method).toLowerCase();
+        if (m === "dinheiro") debtMethods["Dinheiro"] += r.amount;
+        else if (m === "m-pesa") debtMethods["M-Pesa"] += r.amount;
+        else if (m === "cartão" || m === "cartao") debtMethods["Cartão"] += r.amount;
+        else debtMethods["Outro"] += r.amount;
+      });
+      const debtsTotal = Object.values(debtMethods).reduce((a, b) => a + b, 0);
+      document.getElementById("eod-debts-collected").innerHTML = debtsTotal === 0
+        ? '<div class="text-xs text-grey font-normal">Nenhuma dívida cobrada ainda</div>'
+        : Object.entries(debtMethods).filter(([k, v]) => v > 0).map(([k, v]) => `
+          <div class="flex justify-between"><span>${k}</span><span>${fmtMoney(v)}</span></div>
+        `).join('');
+
       // Render dynamic Real Top Selling Items
       const sortedTop = Object.entries(topItems).sort((a, b) => b[1] - a[1]);
       const topItemsHtml = sortedTop.length === 0 
@@ -1986,7 +2103,8 @@
     }
 
     function shareEodWhatsapp() {
-      const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: ${getBusinessDisplayName()}\nData: ${fmtDate(Date.now())}\nSessão encerrada por: ${currentStaffUser.name}`;
+      const debtsTotal = dbState.resolvedDebts.reduce((sum, r) => sum + r.amount, 0);
+      const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: ${getBusinessDisplayName()}\nData: ${fmtDate(Date.now())}\nDívidas Cobradas: ${fmtMoney(debtsTotal)}\nSessão encerrada por: ${currentStaffUser.name}`;
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
     }
 
