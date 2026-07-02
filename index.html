@@ -147,6 +147,9 @@
         <button id="nav-btn-expenses" onclick="switchPage('expenses')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
           <span class="mr-3">💸</span> Despesas
         </button>
+        <button id="nav-btn-shifts" onclick="switchPage('shifts')" class="hidden nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">🕒</span> Turnos Ativos
+        </button>
         <button id="nav-btn-settings" onclick="switchPage('settings')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
           <span class="mr-3">⚙️</span> Definições
         </button>
@@ -159,7 +162,10 @@
             <p id="sidebar-staff-role" class="text-[10px] text-grey">---</p>
           </div>
         </div>
-        <button onclick="attemptEndSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Fechar Turno / Sair">🚪</button>
+        <div class="flex items-center gap-1">
+          <button onclick="lockStaffSession()" class="text-grey hover:bg-light p-2 rounded transition-colors" title="Bloquear Temporariamente (mantém o turno aberto)">🔒</button>
+          <button onclick="attemptEndSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Terminar Turno e Sair">🚪</button>
+        </div>
       </div>
     </aside>
 
@@ -213,11 +219,17 @@
         <button id="mobile-nav-expenses" onclick="switchPage('expenses')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>💸</span><span>Despesas</span>
         </button>
+        <button id="mobile-nav-shifts" onclick="switchPage('shifts')" class="hidden mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>🕒</span><span>Turnos</span>
+        </button>
         <button id="mobile-nav-settings" onclick="switchPage('settings')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>⚙️</span><span>Definições</span>
         </button>
+        <button onclick="lockStaffSession()" class="text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+          <span>🔒</span><span>Bloquear</span>
+        </button>
         <button onclick="attemptEndSession()" class="text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
-          <span>🚪</span><span>Sair</span>
+          <span>🚪</span><span>Terminar</span>
         </button>
       </nav>
 
@@ -315,6 +327,25 @@
               <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Descrição</th><th class="p-3">Categoria</th><th class="p-3">Valor</th></tr></thead>
               <tbody id="expenses-table-body"></tbody>
             </table>
+          </div>
+        </section>
+
+        <!-- Page: Active Shifts (Manager-only, read-only — the operator must close their own shift) -->
+        <section id="page-shifts" class="page-view hidden space-y-4">
+          <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-1">
+            <h1 class="text-xl font-bold text-teal">Turnos Ativos</h1>
+            <span class="text-xs text-grey">Apenas consulta — cada operador fecha o seu próprio turno</span>
+          </div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider">
+                  <th class="p-3">Funcionário</th><th class="p-3">Início do Turno</th><th class="p-3">Saldo de Abertura</th>
+                  <th class="p-3">Vendas em Dinheiro</th><th class="p-3">Dívidas Cobradas</th><th class="p-3">Saldo Esperado</th>
+                </tr></thead>
+                <tbody id="active-shifts-table-body"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -1172,6 +1203,8 @@
     // closing cash balance first so the system can calculate their sales.
     function attemptEndSession() {
       if (currentShift && currentShift.status === "open") {
+        const confirmed = confirm("Tem a certeza que deseja terminar o turno agora?\n\nTerá de contar e confirmar o dinheiro na caixa. Se só vai sair por breves momentos, use o botão 🔒 Bloquear Temporariamente em vez disto.");
+        if (!confirmed) return;
         promptCloseShift();
       } else {
         lockStaffSession();
@@ -1199,6 +1232,35 @@
         }
       });
       return total;
+    }
+
+    // Manager-only, read-only view of every currently open shift. No edit/close actions here -
+    // by design, only the operator themselves can close their own shift (via their own login).
+    function renderActiveShifts() {
+      const tbody = document.getElementById("active-shifts-table-body");
+      if (!tbody) return;
+      const openShifts = dbState.shifts.filter(s => s.status === "open");
+
+      if (openShifts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Nenhum turno ativo neste momento.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = openShifts.map(s => {
+        const cashSales = getCashSalesForShift(s);
+        const cashDebts = getCashDebtsForShift(s);
+        const expected = s.openingBalance + cashSales + cashDebts;
+        return `
+          <tr class="border-b border-light/50 hover:bg-light/20 transition">
+            <td class="p-3 font-semibold">${s.staffName}</td>
+            <td class="p-3 text-grey">${fmtDate(s.openedAt)}</td>
+            <td class="p-3">${fmtMoney(s.openingBalance)}</td>
+            <td class="p-3 text-teal">${fmtMoney(cashSales)}</td>
+            <td class="p-3 text-gold">${fmtMoney(cashDebts)}</td>
+            <td class="p-3 font-bold">${fmtMoney(expected)}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     function promptCloseShift() {
@@ -1284,13 +1346,14 @@
         if (pageId === "stock" && !currentStaffUser.permissions.view_stock) return showToast("Acesso negado", "error");
         if (pageId === "expenses" && !currentStaffUser.permissions.view_expenses) return showToast("Acesso negado", "error");
       }
+      if (pageId === "shifts" && currentStaffUser.role !== "Manager") return showToast("Acesso negado — apenas gerentes", "error");
 
       activePage = pageId;
       document.querySelectorAll(".page-view").forEach(el => el.classList.add("hidden"));
       const targetPage = document.getElementById("page-" + pageId);
       if (targetPage) targetPage.classList.remove("hidden");
       
-      const pages = ['tabs', 'history', 'stock', 'quebras', 'expenses', 'settings'];
+      const pages = ['tabs', 'history', 'stock', 'quebras', 'expenses', 'shifts', 'settings'];
       pages.forEach(p => {
         const btn = document.getElementById("nav-btn-" + p);
         if (btn) {
@@ -1315,12 +1378,14 @@
     }
 
     // Global back button: from any sub-page, return to Contas de Clientes (home).
-    // From the home page itself, "back" means leaving the terminal (closes the shift if one is open).
+    // From the home page itself, "back" performs a safe quick-lock (shift stays open) -
+    // it must never force the closing-balance flow, which is a deliberate action only
+    // triggered via the dedicated 🚪 Terminar Turno button (with its own confirmation).
     function handleGlobalBack() {
       if (activePage !== "tabs") {
         switchPage("tabs");
       } else {
-        attemptEndSession();
+        lockStaffSession();
       }
     }
 
@@ -1332,10 +1397,22 @@
       else if (activePage === "quebras") renderQuebras();
       else if (activePage === "expenses") renderExpenses();
       else if (activePage === "settings") renderSettings();
+      else if (activePage === "shifts") renderActiveShifts();
 
       updateHeaderStats();
       renderFooterStats();
       updateSidebarBusinessName();
+      updateRoleBasedUI();
+    }
+
+    // Manager-only nav items must be re-applied after every render, since switchPage()
+    // rewrites each nav button's className wholesale (which would otherwise reveal them).
+    function updateRoleBasedUI() {
+      const isManager = !!(currentStaffUser && currentStaffUser.role === "Manager");
+      const desktopBtn = document.getElementById("nav-btn-shifts");
+      const mobileBtn = document.getElementById("mobile-nav-shifts");
+      if (desktopBtn) desktopBtn.classList.toggle("hidden", !isManager);
+      if (mobileBtn) mobileBtn.classList.toggle("hidden", !isManager);
     }
 
     // Business Profile helpers
