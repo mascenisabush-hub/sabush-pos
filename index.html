@@ -1347,6 +1347,7 @@
         if (pageId === "expenses" && !currentStaffUser.permissions.view_expenses) return showToast("Acesso negado", "error");
       }
       if (pageId === "shifts" && currentStaffUser.role !== "Manager") return showToast("Acesso negado — apenas gerentes", "error");
+      if (pageId === "settings" && currentStaffUser.role !== "Manager") return showToast("Acesso negado — apenas o gerente pode abrir Configurações", "error");
 
       activePage = pageId;
       document.querySelectorAll(".page-view").forEach(el => el.classList.add("hidden"));
@@ -1413,6 +1414,11 @@
       const mobileBtn = document.getElementById("mobile-nav-shifts");
       if (desktopBtn) desktopBtn.classList.toggle("hidden", !isManager);
       if (mobileBtn) mobileBtn.classList.toggle("hidden", !isManager);
+
+      const settingsDesktopBtn = document.getElementById("nav-btn-settings");
+      const settingsMobileBtn = document.getElementById("mobile-nav-settings");
+      if (settingsDesktopBtn) settingsDesktopBtn.classList.toggle("hidden", !isManager);
+      if (settingsMobileBtn) settingsMobileBtn.classList.toggle("hidden", !isManager);
     }
 
     // Business Profile helpers
