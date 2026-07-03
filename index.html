@@ -822,7 +822,7 @@
         { id: 103, name: "Frango Grelhado", price: 450 }, { id: 104, name: "Batata Frita", price: 150 },
         { id: 105, name: "Água Mineral", price: 50 }, { id: 106, name: "Coca-Cola", price: 70 }
       ],
-      staffList: [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }],
+      staffList: [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }],
       stockProducts: [
         { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 100, unit: "un", minStock: 20 },
         { id: 2, name: "Cerveja Laurentina", category: "Bebidas", price: 95, qty: 50, unit: "un", minStock: 10 },
@@ -868,6 +868,50 @@
     }
 
     // Modal Manager
+    // --- PIN hashing (SHA-256 + per-staff random salt) ---
+    // PINs are never stored or compared in plaintext. Each staff record carries
+    // pinHash + pinSalt instead of a raw pin string. No PIN configured -> pinHash === "".
+    function generateSalt() {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+    async function hashPin(pin, salt) {
+      if (!pin) return "";
+      const enc = new TextEncoder();
+      const buf = await crypto.subtle.digest("SHA-256", enc.encode(salt + ":" + pin));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+    async function verifyPin(staff, pin) {
+      if (!staff || !staff.pinHash) return false;
+      return (await hashPin(pin, staff.pinSalt || "")) === staff.pinHash;
+    }
+    async function setStaffPinHash(staff, pin) {
+      if (!pin) { staff.pinHash = ""; staff.pinSalt = ""; return; }
+      staff.pinSalt = generateSalt();
+      staff.pinHash = await hashPin(pin, staff.pinSalt);
+    }
+    // One-time migration for records created before hashing was added: any staff
+    // still carrying a legacy plaintext `pin` field gets it converted to a salted
+    // hash, then the plaintext value is deleted, locally and in the cloud.
+    async function migrateLegacyPins() {
+      if (!Array.isArray(dbState.staffList)) return;
+      let migrated = false;
+      for (const staff of dbState.staffList) {
+        if (staff.pin !== undefined) {
+          if (staff.pin) await setStaffPinHash(staff, staff.pin);
+          else { staff.pinHash = staff.pinHash || ""; staff.pinSalt = staff.pinSalt || ""; }
+          delete staff.pin;
+          migrated = true;
+        }
+      }
+      if (migrated) {
+        dbState.updatedAt = Date.now();
+        saveLocalState();
+        syncLocalToFirestore();
+      }
+    }
+
     function openModal(id) {
       const m = document.getElementById(id);
       if (m) m.classList.replace("hidden", "flex");
@@ -879,13 +923,13 @@
 
     // Generic PIN re-confirmation, used before irreversible actions (closing a shift,
     // wiping all data). Shows a small masked PIN pad and only runs onSuccess if the
-    // digits typed match currentStaffUser's PIN. If no PIN is configured yet (e.g. a
+    // digits typed hash-match currentStaffUser's PIN. If no PIN is configured yet (e.g. a
     // first-time manager still in unrestricted demo mode) it trusts the action through,
     // so normal onboarding isn't blocked — callers that must never skip this (like Wipe
-    // Data) should check currentStaffUser.pin themselves before calling this.
+    // Data) should check currentStaffUser.pinHash themselves before calling this.
     let _pinReconfirmResolve = null;
     function requestPinReconfirm(message, onSuccess) {
-      if (!currentStaffUser || !currentStaffUser.pin) {
+      if (!currentStaffUser || !currentStaffUser.pinHash) {
         onSuccess();
         return;
       }
@@ -901,11 +945,11 @@
       document.getElementById("pin-reconfirm-input").value = "";
       closeModal("mod-pin-reconfirm");
     }
-    function submitPinReconfirm() {
+    async function submitPinReconfirm() {
       const input = document.getElementById("pin-reconfirm-input");
       const val = input.value.trim();
       if (!val) return showToast("Introduza o PIN", "error");
-      if (val !== currentStaffUser.pin) {
+      if (!(await verifyPin(currentStaffUser, val))) {
         showToast("PIN incorreto", "error");
         input.value = "";
         input.focus();
@@ -936,18 +980,19 @@
 
     // Firebase Auth Gateway
     function initAuthListener() {
-      window._fbMethods.onAuthStateChanged(window._fbAuth, (user) => {
+      window._fbMethods.onAuthStateChanged(window._fbAuth, async (user) => {
         if (user) {
           currentBusinessUser = user;
           document.getElementById("scr-auth").classList.add("hidden");
           loadLocalState();
+          await migrateLegacyPins();
           if (dbState.settings.syncEnabled) {
             setupRealtimeSync();
           }
           // First-time / single-manager access: if there's only one staff profile and
           // no PIN has been configured for them yet, log straight into the dashboard.
           // The manager can set a PIN for themselves (and add staff) later in Settings.
-          if (dbState.staffList.length === 1 && !dbState.staffList[0].pin) {
+          if (dbState.staffList.length === 1 && !dbState.staffList[0].pinHash) {
             document.getElementById("scr-staff").classList.add("hidden");
             loginAsStaff(dbState.staffList[0]);
           } else {
@@ -1079,7 +1124,7 @@
     function setupRealtimeSync() {
       if (!currentBusinessUser) return;
       const ref = window._fbMethods.doc(window._fbDb, "pos", currentBusinessUser.uid);
-      unsubscribeSync = window._fbMethods.onSnapshot(ref, (snap) => {
+      unsubscribeSync = window._fbMethods.onSnapshot(ref, async (snap) => {
         if (snap.exists()) {
           const cloudState = snap.data();
           if (cloudState.updatedAt > dbState.updatedAt) {
@@ -1090,6 +1135,7 @@
             if (currentShift) {
               currentShift = dbState.shifts.find(s => s.id === currentShift.id) || currentShift;
             }
+            await migrateLegacyPins(); // in case this snapshot came from a pre-hashing device
             saveLocalState();
             renderUI();
             showToast("Sincronizado na Nuvem", "info");
@@ -1156,7 +1202,7 @@
       selectedStaffForLoginId = id;
       selectedStaffForPin = dbState.staffList.find(s => s.id === id);
       // No PIN configured for this profile yet -> log straight in, no PIN screen at all.
-      if (!selectedStaffForPin.pin) {
+      if (!selectedStaffForPin.pinHash) {
         loginAsStaff(selectedStaffForPin);
         return;
       }
@@ -1174,11 +1220,11 @@
       document.getElementById("staff-profiles").classList.remove("hidden");
     }
 
-    function confirmPinLogin() {
+    async function confirmPinLogin() {
       const input = document.getElementById("pin-input");
       const val = input.value.trim();
       if (!val) return showToast("Introduza o PIN", "error");
-      if (val === selectedStaffForPin.pin) {
+      if (await verifyPin(selectedStaffForPin, val)) {
         loginAsStaff(selectedStaffForPin);
       } else {
         showToast("PIN Incorreto", "error");
@@ -1190,7 +1236,7 @@
     function loginAsStaff(staff) {
       currentStaffUser = staff;
       document.getElementById("pin-pad-container").classList.add("hidden");
-      logAudit(staff.pin ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
+      logAudit(staff.pinHash ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
 
       const openShift = dbState.shifts.find(s => s.staffId === staff.id && s.status === "open");
       if (openShift) {
@@ -1338,7 +1384,7 @@
       if (isNaN(val) || val < 0) return showToast("Introduza o saldo de fecho contado", "error");
 
       requestPinReconfirm(`Confirme o seu PIN (${currentStaffUser.name}) para fechar o turno definitivamente`, () => {
-        const pinReconfirmed = !!(currentStaffUser && currentStaffUser.pin);
+        const pinReconfirmed = !!(currentStaffUser && currentStaffUser.pinHash);
         const cashSales = getCashSalesForShift(currentShift);
         const cashDebts = getCashDebtsForShift(currentShift);
         const expected = currentShift.openingBalance + cashSales + cashDebts;
@@ -2452,7 +2498,7 @@
         <div class="flex justify-between items-center bg-light/30 p-2.5 rounded-lg text-xs">
           <div>
             <div class="font-bold text-white">${s.name}</div>
-            <div class="text-grey">${s.role === "Manager" ? "Gerente" : "Caixa"} — ${s.pin ? "PIN definido" : "sem PIN (acesso direto)"}</div>
+            <div class="text-grey">${s.role === "Manager" ? "Gerente" : "Caixa"} — ${s.pinHash ? "PIN definido" : "sem PIN (acesso direto)"}</div>
           </div>
           <div class="flex items-center gap-3">
             <button onclick="openSetPinModal('${s.id}')" class="text-teal hover:underline">Definir PIN</button>
@@ -2484,19 +2530,29 @@
       if (!staff) return;
       staffIdForPinEdit = id;
       document.getElementById("set-pin-staff-name").innerText = staff.name;
-      document.getElementById("set-pin-value").value = staff.pin || "";
+      // PINs are hashed, so the current value can't be shown — always start blank.
+      // Leaving it blank and saving removes the PIN (direct access); typing a new
+      // one replaces the old hash entirely.
+      document.getElementById("set-pin-value").value = "";
       openModal("mod-set-pin");
       setTimeout(() => document.getElementById("set-pin-value").focus(), 50);
     }
 
-    function saveStaffPin() {
+    async function saveStaffPin() {
       const val = document.getElementById("set-pin-value").value.trim();
       if (val && (val.length < 4 || val.length > 6 || !/^\d+$/.test(val))) {
         return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
       }
+      const staff = dbState.staffList.find(s => s.id === staffIdForPinEdit);
+      if (!staff) return;
+      let newHash = "", newSalt = "";
+      if (val) {
+        newSalt = generateSalt();
+        newHash = await hashPin(val, newSalt);
+      }
       updateState(() => {
-        const staff = dbState.staffList.find(s => s.id === staffIdForPinEdit);
-        if (staff) staff.pin = val;
+        staff.pinHash = newHash;
+        staff.pinSalt = newSalt;
       });
       closeModal("mod-set-pin");
       showToast(val ? "PIN atualizado!" : "PIN removido — acesso direto ativado");
@@ -2532,7 +2588,7 @@
       else wrapper.classList.remove("hidden");
     }
 
-    function saveNewStaff() {
+    async function saveNewStaff() {
       const name = document.getElementById("staff-name").value.trim();
       const pin = document.getElementById("staff-pin").value.trim();
       const role = document.getElementById("staff-role").value;
@@ -2541,10 +2597,16 @@
         return showToast("PIN deve conter entre 4 a 6 algarismos", "error");
       }
 
+      let pinHash = "", pinSalt = "";
+      if (pin) {
+        pinSalt = generateSalt();
+        pinHash = await hashPin(pin, pinSalt);
+      }
+
       updateState(() => {
         dbState.staffList.push({
           id: "staff-" + Date.now(),
-          name, pin, role,
+          name, pinHash, pinSalt, role,
           permissions: {
             open_tabs: document.getElementById("perm-open-tabs").checked,
             close_tabs: document.getElementById("perm-close-tabs").checked,
@@ -2568,7 +2630,7 @@
     function confirmWipeData() {
       if (!confirm("TEM A CERTEZA QUE DESEJA APAGAR TODOS OS DADOS DO SISTEMA?\nEsta acção é irreversível.")) return;
 
-      if (!currentStaffUser || !currentStaffUser.pin) {
+      if (!currentStaffUser || !currentStaffUser.pinHash) {
         showToast("Defina primeiro um PIN para a sua conta (Configurações) para poder confirmar esta ação.", "error");
         return;
       }
@@ -2580,7 +2642,7 @@
           dbState.stockProducts = []; dbState.stockMovements = [];
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
           dbState.shifts = [];
-          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
+          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }];
           dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
         });
         logAudit("Wipe de Dados", `Todos os dados do sistema foram apagados por ${wipedBy} (PIN confirmado)`);
