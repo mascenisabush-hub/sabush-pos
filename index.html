@@ -649,6 +649,21 @@
     </div>
   </div>
 
+  <!-- Modal: PIN Re-confirmation (used before irreversible actions: closing a shift, wiping data) -->
+  <div id="mod-pin-reconfirm" class="hidden fixed inset-0 z-50 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
+      <div class="text-lg font-bold text-gold">Confirme o seu PIN</div>
+      <p id="pin-reconfirm-message" class="text-xs text-grey">---</p>
+      <input type="password" id="pin-reconfirm-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+        class="c-input w-full p-3 rounded-lg text-xl text-center tracking-[0.4em] font-mono"
+        placeholder="••••" onkeypress="if(event.key==='Enter'){submitPinReconfirm();}">
+      <div class="flex gap-3 pt-1">
+        <button onclick="cancelPinReconfirm()" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
+        <button onclick="submitPinReconfirm()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Resolve Debt (Cobrar Dívida) - captures payment method so it counts correctly in cash reconciliation -->
   <div id="mod-resolve-debt" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
     <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
@@ -860,6 +875,47 @@
     function closeModal(id) {
       const m = document.getElementById(id);
       if (m) m.classList.replace("flex", "hidden");
+    }
+
+    // Generic PIN re-confirmation, used before irreversible actions (closing a shift,
+    // wiping all data). Shows a small masked PIN pad and only runs onSuccess if the
+    // digits typed match currentStaffUser's PIN. If no PIN is configured yet (e.g. a
+    // first-time manager still in unrestricted demo mode) it trusts the action through,
+    // so normal onboarding isn't blocked — callers that must never skip this (like Wipe
+    // Data) should check currentStaffUser.pin themselves before calling this.
+    let _pinReconfirmResolve = null;
+    function requestPinReconfirm(message, onSuccess) {
+      if (!currentStaffUser || !currentStaffUser.pin) {
+        onSuccess();
+        return;
+      }
+      document.getElementById("pin-reconfirm-message").innerText = message;
+      const input = document.getElementById("pin-reconfirm-input");
+      input.value = "";
+      _pinReconfirmResolve = onSuccess;
+      openModal("mod-pin-reconfirm");
+      setTimeout(() => input.focus(), 50);
+    }
+    function cancelPinReconfirm() {
+      _pinReconfirmResolve = null;
+      document.getElementById("pin-reconfirm-input").value = "";
+      closeModal("mod-pin-reconfirm");
+    }
+    function submitPinReconfirm() {
+      const input = document.getElementById("pin-reconfirm-input");
+      const val = input.value.trim();
+      if (!val) return showToast("Introduza o PIN", "error");
+      if (val !== currentStaffUser.pin) {
+        showToast("PIN incorreto", "error");
+        input.value = "";
+        input.focus();
+        return;
+      }
+      const cb = _pinReconfirmResolve;
+      _pinReconfirmResolve = null;
+      input.value = "";
+      closeModal("mod-pin-reconfirm");
+      if (cb) cb();
     }
 
     // App Initialization
@@ -1281,42 +1337,31 @@
       const val = parseFloat(document.getElementById("close-shift-balance").value);
       if (isNaN(val) || val < 0) return showToast("Introduza o saldo de fecho contado", "error");
 
-      // Extra safety: closing a shift is final (no reopen), so mirror the Wipe Data
-      // pattern and require the operator to re-enter their PIN before it's locked in.
-      // Staff without a PIN configured yet (e.g. first-time manager) are unaffected.
-      let pinReconfirmed = false;
-      if (currentStaffUser && currentStaffUser.pin) {
-        const pin = prompt(`Confirme o seu PIN (${currentStaffUser.name}) para fechar o turno definitivamente:`);
-        if (pin === null) return; // cancelled — modal stays open, nothing changed
-        if (pin.trim() !== currentStaffUser.pin) {
-          showToast("PIN incorreto. Fecho de turno cancelado.", "error");
-          return;
-        }
-        pinReconfirmed = true;
-      }
+      requestPinReconfirm(`Confirme o seu PIN (${currentStaffUser.name}) para fechar o turno definitivamente`, () => {
+        const pinReconfirmed = !!(currentStaffUser && currentStaffUser.pin);
+        const cashSales = getCashSalesForShift(currentShift);
+        const cashDebts = getCashDebtsForShift(currentShift);
+        const expected = currentShift.openingBalance + cashSales + cashDebts;
+        const difference = Math.round((val - expected) * 100) / 100;
 
-      const cashSales = getCashSalesForShift(currentShift);
-      const cashDebts = getCashDebtsForShift(currentShift);
-      const expected = currentShift.openingBalance + cashSales + cashDebts;
-      const difference = Math.round((val - expected) * 100) / 100;
+        updateState(() => {
+          currentShift.closedAt = Date.now();
+          currentShift.closingBalance = val;
+          currentShift.cashSales = cashSales;
+          currentShift.cashDebtsCollected = cashDebts;
+          currentShift.expectedCash = expected;
+          currentShift.difference = difference;
+          currentShift.status = "closed";
+          logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}${pinReconfirmed ? " (PIN confirmado)" : ""}`);
+        });
 
-      updateState(() => {
-        currentShift.closedAt = Date.now();
-        currentShift.closingBalance = val;
-        currentShift.cashSales = cashSales;
-        currentShift.cashDebtsCollected = cashDebts;
-        currentShift.expectedCash = expected;
-        currentShift.difference = difference;
-        currentShift.status = "closed";
-        logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}${pinReconfirmed ? " (PIN confirmado)" : ""}`);
+        const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
+        showToast(`Turno fechado. Vendas: ${fmtMoney(cashSales)}. Dívidas: ${fmtMoney(cashDebts)}. ${diffMsg}`, difference < 0 ? "error" : "success");
+
+        closeModal("mod-close-shift");
+        currentShift = null;
+        lockStaffSession();
       });
-
-      const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
-      showToast(`Turno fechado. Vendas: ${fmtMoney(cashSales)}. Dívidas: ${fmtMoney(cashDebts)}. ${diffMsg}`, difference < 0 ? "error" : "success");
-
-      closeModal("mod-close-shift");
-      currentShift = null;
-      lockStaffSession();
     }
 
     function cancelCloseShift() {
@@ -2528,26 +2573,21 @@
         return;
       }
 
-      const pin = prompt(`Confirmação final — introduza o seu PIN (${currentStaffUser.name}) para apagar todos os dados:`);
-      if (pin === null) return; // cancelled
-      if (pin.trim() !== currentStaffUser.pin) {
-        showToast("PIN incorreto. Operação cancelada.", "error");
-        return;
-      }
-
-      const wipedBy = currentStaffUser.name;
-      updateState(() => {
-        dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
-        dbState.stockProducts = []; dbState.stockMovements = [];
-        dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
-        dbState.shifts = [];
-        dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
-        dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
+      requestPinReconfirm(`Introduza o seu PIN (${currentStaffUser.name}) para apagar todos os dados`, () => {
+        const wipedBy = currentStaffUser.name;
+        updateState(() => {
+          dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
+          dbState.stockProducts = []; dbState.stockMovements = [];
+          dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
+          dbState.shifts = [];
+          dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pin: "", role: "Manager", permissions: {} }];
+          dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
+        });
+        logAudit("Wipe de Dados", `Todos os dados do sistema foram apagados por ${wipedBy} (PIN confirmado)`);
+        currentShift = null;
+        showToast("Todo o sistema foi reiniciado!");
+        lockStaffSession();
       });
-      logAudit("Wipe de Dados", `Todos os dados do sistema foram apagados por ${wipedBy} (PIN confirmado)`);
-      currentShift = null;
-      showToast("Todo o sistema foi reiniciado!");
-      lockStaffSession();
     }
   </script>
 </body>
