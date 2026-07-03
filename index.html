@@ -1094,6 +1094,10 @@
       } else if (!dbState.businessProfile) {
         dbState.businessProfile = { name: "", nuit: "", address: "", phone: "", email: "" };
       }
+      // Restore last-confirmed-synced marker (see updateState/setupRealtimeSync) so a
+      // fresh app load doesn't mistake an already-synced local cache for pending changes.
+      const lastSyncedStr = localStorage.getItem("sabush_last_synced_at");
+      lastSyncedAt = lastSyncedStr ? parseInt(lastSyncedStr, 10) || 0 : 0;
       applyThemeSetting();
     }
 
@@ -1119,6 +1123,30 @@
       renderUI();
     }
 
+    // Fields that are collections of records with a stable `id` — safe to merge
+    // item-by-item instead of overwriting wholesale when reconciling with the cloud.
+    const MERGEABLE_ARRAY_FIELDS = [
+      "tabs", "history", "resolvedDebts", "stockProducts", "stockMovements",
+      "quebras", "expenses", "auditLog", "shifts", "staffList"
+    ];
+    function mergeArraysById(localArr, cloudArr) {
+      const local = Array.isArray(localArr) ? localArr : [];
+      const cloud = Array.isArray(cloudArr) ? cloudArr : [];
+      const map = new Map();
+      // Seed with cloud's items first, then overlay local's — on a shared id, the
+      // local copy wins, since local is the version that would otherwise be silently
+      // discarded. Items that exist on only one side (added by either device) are kept.
+      cloud.forEach(item => { if (item && item.id !== undefined) map.set(item.id, item); });
+      local.forEach(item => { if (item && item.id !== undefined) map.set(item.id, item); });
+      return Array.from(map.values());
+    }
+
+    // Tracks the updatedAt value we last confirmed was written to Firestore. Used to
+    // tell "I have zero pending local changes, safe to fully adopt the cloud version"
+    // apart from "I have local edits Firestore doesn't know about yet — merge instead
+    // of overwrite, or they'll be silently lost."
+    let lastSyncedAt = 0;
+
     // Real-time Cloud Sync (Firestore)
     let unsubscribeSync = null;
     function setupRealtimeSync() {
@@ -1128,17 +1156,44 @@
         if (snap.exists()) {
           const cloudState = snap.data();
           if (cloudState.updatedAt > dbState.updatedAt) {
-            dbState = { ...dbState, ...cloudState };
-            if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
-            // currentShift held a reference into the old shifts array - re-point it
-            // to the matching record in the freshly merged array so edits still apply.
-            if (currentShift) {
-              currentShift = dbState.shifts.find(s => s.id === currentShift.id) || currentShift;
+            // No local changes pending since our last confirmed push -> the incoming
+            // snapshot is a strict superset of what we know, safe to adopt wholesale.
+            const hasUnsyncedLocalChanges = dbState.updatedAt > lastSyncedAt;
+
+            if (!hasUnsyncedLocalChanges) {
+              dbState = { ...dbState, ...cloudState };
+              if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
+              if (currentShift) {
+                currentShift = dbState.shifts.find(s => s.id === currentShift.id) || currentShift;
+              }
+              await migrateLegacyPins(); // in case this snapshot came from a pre-hashing device
+              lastSyncedAt = dbState.updatedAt;
+              localStorage.setItem("sabush_last_synced_at", String(lastSyncedAt));
+              saveLocalState();
+              renderUI();
+              showToast("Sincronizado na Nuvem", "info");
+            } else {
+              // Both this device and another made changes before either fully synced.
+              // A wholesale overwrite here would silently drop whichever side loses.
+              // Instead, merge record-collections item-by-item (union by id, local wins
+              // on a shared id) so nothing typed on this device disappears, then push
+              // the merged result back up so the cloud reflects both sides' work.
+              const mergedFields = {};
+              MERGEABLE_ARRAY_FIELDS.forEach(field => {
+                mergedFields[field] = mergeArraysById(dbState[field], cloudState[field]);
+              });
+              dbState = { ...dbState, ...cloudState, ...mergedFields, updatedAt: Date.now() };
+              if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
+              if (currentShift) {
+                currentShift = dbState.shifts.find(s => s.id === currentShift.id) || currentShift;
+              }
+              await migrateLegacyPins();
+              logAudit("Sincronização", "Alterações feitas offline ou noutro dispositivo em simultâneo foram combinadas automaticamente.");
+              saveLocalState();
+              await syncLocalToFirestore(); // push the merge so the cloud copy matches
+              renderUI();
+              showToast("Sincronizado — alterações de ambos os dispositivos combinadas", "info");
             }
-            await migrateLegacyPins(); // in case this snapshot came from a pre-hashing device
-            saveLocalState();
-            renderUI();
-            showToast("Sincronizado na Nuvem", "info");
           }
         }
       });
@@ -1149,7 +1204,10 @@
       setSyncStatus("syncing");
       try {
         const ref = window._fbMethods.doc(window._fbDb, "pos", currentBusinessUser.uid);
+        const pushedAt = dbState.updatedAt;
         await window._fbMethods.setDoc(ref, dbState);
+        lastSyncedAt = pushedAt;
+        localStorage.setItem("sabush_last_synced_at", String(pushedAt));
         setSyncStatus("online");
       } catch (err) {
         setSyncStatus("offline");
