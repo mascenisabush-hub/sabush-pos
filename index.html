@@ -2694,9 +2694,15 @@
     }
 
     function deleteStaff(id) {
+      const staff = dbState.staffList.find(s => s.id === id);
+      if (!staff) return;
+      if (!confirm(`Remover ${staff.name} da lista de funcionários?\nEsta ação não pode ser desfeita.`)) return;
+
       updateState(() => {
         dbState.staffList = dbState.staffList.filter(s => s.id !== id);
+        logAudit("Remover Funcionário", `${staff.name} (${staff.role === "Manager" ? "Gerente" : "Caixa"}) foi removido da lista de funcionários`);
       });
+      showToast("Funcionário removido");
     }
 
     function confirmWipeData() {
