@@ -2132,7 +2132,12 @@
                 prodId: prod.id, prodName: prod.name, qty: -item.qty,
                 type: "out", reason: "Venda na Conta " + currentDetailTab.name
               });
-              if (prod.qty <= prod.minStock) {
+              // Negative stock means more was sold than the system had on record -
+              // distinct from the routine "getting low" warning, since it points to
+              // a counting/restock problem that needs looking into, not just a reorder.
+              if (prod.qty < 0) {
+                showToast(`Aviso: ${prod.name} vendido além do stock registado (${prod.qty} ${prod.unit})`, "error");
+              } else if (prod.qty <= prod.minStock) {
                 showToast(`Alerta: ${prod.name} com stock crítico (${prod.qty} ${prod.unit})`, "warning");
               }
             }
@@ -2722,6 +2727,15 @@
           dbState.stockProducts = []; dbState.stockMovements = [];
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
           dbState.shifts = [];
+          // Reset quickItems and tables too — leaving them behind after wiping
+          // stockProducts left "quick add" buttons pointing at products that no
+          // longer existed in the catalog, silently skipping stock deduction.
+          dbState.quickItems = [
+            { id: 101, name: "Cerveja 2M", price: 80 }, { id: 102, name: "Cerveja Laurentina", price: 95 },
+            { id: 103, name: "Frango Grelhado", price: 450 }, { id: 104, name: "Batata Frita", price: 150 },
+            { id: 105, name: "Água Mineral", price: 50 }, { id: 106, name: "Coca-Cola", price: 70 }
+          ];
+          dbState.tables = ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"];
           dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }];
           dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
         });
