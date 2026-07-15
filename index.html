@@ -855,6 +855,16 @@
     function fmtMoney(v) { return Number(v).toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " MT"; }
     function fmtDate(t) { return new Date(t).toLocaleString('pt-PT'); }
 
+    // Returns the epoch ms for the start of the current local day (00:00:00).
+    // Used to filter "hoje" (today) totals — header revenue, quebras, expenses,
+    // and the EOD report — so they reset daily instead of accumulating forever.
+    function startOfToday() {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    }
+    function isToday(timestamp) { return timestamp >= startOfToday(); }
+
     // Toast Engine
     function showToast(msg, type = "info") {
       const el = document.getElementById("toast");
@@ -1601,10 +1611,10 @@
       const elDate = document.getElementById("header-date");
       if (elDate) elDate.innerText = dateStr;
 
-      // Revenue: calculate total revenue of the day
+      // Revenue: calculate total revenue of the day (today only)
       let sumPaid = 0;
       dbState.history.forEach(h => {
-        sumPaid += h.paid;
+        if (isToday(h.timestamp)) sumPaid += h.paid;
       });
       const elRev = document.getElementById("header-revenue");
       if (elRev) elRev.innerText = fmtMoney(sumPaid);
@@ -2288,7 +2298,9 @@
       const topItems = {};
       const debtors = [];
 
-      dbState.history.forEach(h => {
+      const todaysHistory = dbState.history.filter(h => isToday(h.timestamp));
+
+      todaysHistory.forEach(h => {
         if (h.payments) {
           h.payments.forEach(p => {
             const m = String(p.method).toLowerCase();
@@ -2313,9 +2325,9 @@
         <div class="flex justify-between"><span>${k}</span><span>${fmtMoney(v)}</span></div>
       `).join('');
 
-      // Debts collected ("Cobrar Dívida") by method - recorded separately from fresh sales
+      // Debts collected ("Cobrar Dívida") by method today - recorded separately from fresh sales
       const debtMethods = { Dinheiro: 0, "M-Pesa": 0, "Cartão": 0, Outro: 0 };
-      dbState.resolvedDebts.forEach(r => {
+      dbState.resolvedDebts.filter(r => isToday(r.timestamp)).forEach(r => {
         const m = String(r.method).toLowerCase();
         if (m === "dinheiro") debtMethods["Dinheiro"] += r.amount;
         else if (m === "m-pesa") debtMethods["M-Pesa"] += r.amount;
@@ -2349,7 +2361,7 @@
     }
 
     function shareEodWhatsapp() {
-      const debtsTotal = dbState.resolvedDebts.reduce((sum, r) => sum + r.amount, 0);
+      const debtsTotal = dbState.resolvedDebts.filter(r => isToday(r.timestamp)).reduce((sum, r) => sum + r.amount, 0);
       const text = `*SABUSH POS - FECHO DIÁRIO*\nEmpresa: ${getBusinessDisplayName()}\nData: ${fmtDate(Date.now())}\nDívidas Cobradas: ${fmtMoney(debtsTotal)}\nSessão encerrada por: ${currentStaffUser.name}`;
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
     }
@@ -2465,7 +2477,7 @@
     function renderQuebras() {
       const tbody = document.getElementById("quebras-table-body");
       let tot = 0;
-      dbState.quebras.forEach(q => tot += q.qty * q.cost);
+      dbState.quebras.forEach(q => { if (isToday(q.timestamp)) tot += q.qty * q.cost; });
       document.getElementById("quebras-today-total").innerText = fmtMoney(tot);
       
       tbody.innerHTML = dbState.quebras.map(q => `
@@ -2506,7 +2518,7 @@
     function renderExpenses() {
       const tbody = document.getElementById("expenses-table-body");
       let tot = 0;
-      dbState.expenses.forEach(e => tot += e.amount);
+      dbState.expenses.forEach(e => { if (isToday(e.timestamp)) tot += e.amount; });
       document.getElementById("expenses-today-total").innerText = fmtMoney(tot);
 
       tbody.innerHTML = dbState.expenses.map(e => `
