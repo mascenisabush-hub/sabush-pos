@@ -1,10 +1,12 @@
 // Cache version bump forces any old cached index.html (like the one this fix is
 // solving) to be discarded the moment this new worker activates on a device.
-const CACHE_NAME = 'sabush-pos-cache-v2';
+const CACHE_NAME = 'sabush-pos-cache-v3';
 const ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
