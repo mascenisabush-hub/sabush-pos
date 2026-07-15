@@ -70,7 +70,7 @@
           <label class="block text-xs font-semibold text-grey mb-1">PALAVRA-PASSE</label>
           <input type="password" id="auth-pass" class="c-input w-full p-3 rounded-lg text-sm" placeholder="••••••••">
         </div>
-        <button onclick="handleEmailAuth('signin')" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Iniciar Sessão</button>
+        <button id="auth-submit-btn" onclick="handleEmailAuth('signin')" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Iniciar Sessão</button>
         <div class="flex justify-between text-xs text-grey">
           <button onclick="handleForgotPassword()" class="hover:text-teal">Esqueceu a senha?</button>
           <button onclick="toggleAuthMode()" id="btn-toggle-mode" class="hover:text-teal">Criar Nova Empresa</button>
@@ -1054,6 +1054,8 @@
     function toggleAuthMode() {
       authMode = authMode === "signin" ? "signup" : "signin";
       document.getElementById("btn-toggle-mode").innerText = authMode === "signin" ? "Criar Nova Empresa" : "Já tenho empresa";
+      document.getElementById("auth-title").innerText = authMode === "signin" ? "Sabush Commercial Gate" : "Registar Nova Empresa";
+      document.getElementById("auth-submit-btn").innerText = authMode === "signin" ? "Iniciar Sessão" : "Criar Empresa";
       const backBtn = document.getElementById("auth-back-btn");
       if (authMode === "signup") {
         backBtn.classList.remove("hidden");
