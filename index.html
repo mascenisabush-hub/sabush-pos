@@ -601,13 +601,27 @@
       <div><label class="block text-xs text-grey mb-1">Nome do Produto</label><input type="text" id="prod-name" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="block text-xs text-grey mb-1">Categoria</label><input type="text" id="prod-category" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Bebidas/Alimentação"></div>
-        <div><label class="block text-xs text-grey mb-1">Unidade de Medida</label><input type="text" id="prod-unit" class="c-input w-full p-2.5 rounded-lg text-sm" value="un"></div>
+        <div><label class="block text-xs text-grey mb-1">Unidade Base (menor)</label><input type="text" id="prod-unit" oninput="onProductBaseUnitChange()" class="c-input w-full p-2.5 rounded-lg text-sm" value="un" placeholder="Ex: un, kg"></div>
       </div>
       <div class="grid grid-cols-3 gap-3">
         <div><label class="block text-xs text-grey mb-1">Preço Venda (MT)</label><input type="number" id="prod-price" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
-        <div><label class="block text-xs text-grey mb-1">Stock Atual</label><input type="number" id="prod-qty" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+        <div>
+          <label class="block text-xs text-grey mb-1">Stock Atual (<span id="prod-qty-unit-label">un</span>)</label>
+          <input type="number" id="prod-qty" oninput="renderProductStockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm">
+        </div>
         <div><label class="block text-xs text-grey mb-1">Stock Mínimo</label><input type="number" id="prod-min" class="c-input w-full p-2.5 rounded-lg text-sm" value="10"></div>
       </div>
+      <div id="prod-stock-preview" class="text-xs text-grey font-mono"></div>
+
+      <div class="border-t border-light pt-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="block text-xs text-grey">Unidades de Compra/Venda (opcional)</label>
+          <button type="button" onclick="addProductUnitRow()" class="text-xs font-bold text-teal hover:underline">+ Adicionar Unidade</button>
+        </div>
+        <p class="text-[11px] text-grey">Ex: 1 CX = 24 un, 1 Emb = 6 un. Defina quantas "Unidade Base" cada unidade maior contém.</p>
+        <div id="prod-units-list" class="space-y-2"></div>
+      </div>
+
       <div class="flex gap-3 pt-2">
         <button onclick="closeModal('mod-product')" class="flex-1 c-input p-2.5 rounded-lg text-sm font-semibold">Cancelar</button>
         <button onclick="saveProduct()" class="flex-1 bg-teal text-deep font-bold p-2.5 rounded-lg text-sm hover:opacity-90">Guardar Artigo</button>
@@ -620,10 +634,17 @@
     <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4">
       <div class="text-lg font-bold text-teal">Adicionar Stock — <span id="restock-prod-name">---</span></div>
       <div class="text-xs text-grey">Stock atual: <span id="restock-prod-current" class="font-bold text-white">0</span></div>
-      <div>
-        <label class="block text-xs text-grey mb-1">Quantidade a adicionar</label>
-        <input type="number" id="restock-qty" min="1" inputmode="numeric" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 20" onkeypress="if(event.key==='Enter'){confirmRestock();}">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-grey mb-1">Quantidade a adicionar</label>
+          <input type="number" id="restock-qty" min="1" inputmode="numeric" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 20" oninput="renderRestockPreview()" onkeypress="if(event.key==='Enter'){confirmRestock();}">
+        </div>
+        <div>
+          <label class="block text-xs text-grey mb-1">Nesta unidade</label>
+          <select id="restock-unit" onchange="renderRestockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm"></select>
+        </div>
       </div>
+      <div id="restock-preview" class="text-xs text-grey font-mono"></div>
       <div>
         <label class="block text-xs text-grey mb-1">Motivo (opcional)</label>
         <input type="text" id="restock-reason" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Compra ao fornecedor">
@@ -844,7 +865,7 @@
       ],
       staffList: [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }],
       stockProducts: [
-        { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 100, unit: "un", minStock: 20 },
+        { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 255, unit: "un", minStock: 20, units: [{ name: "emb", factor: 6 }, { name: "cx", factor: 24 }] },
         { id: 2, name: "Cerveja Laurentina", category: "Bebidas", price: 95, qty: 50, unit: "un", minStock: 10 },
         { id: 3, name: "Frango Grelhado", category: "Alimentação", price: 450, qty: 30, unit: "dose", minStock: 5 },
         { id: 4, name: "Batata Frita", category: "Alimentação", price: 150, qty: 40, unit: "dose", minStock: 8 }
@@ -2228,7 +2249,7 @@
                 type: "out", reason: "Venda na Conta " + currentDetailTab.name
               });
               if (prod.qty <= prod.minStock) {
-                showToast(`Alerta: ${prod.name} com stock crítico (${prod.qty} ${prod.unit})`, "warning");
+                showToast(`Alerta: ${prod.name} com stock crítico (${formatBreakdown(prod)})`, "warning");
               }
             }
           });
@@ -2464,6 +2485,59 @@
       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
     }
 
+    // ---- Unit conversion helpers ----
+    // A product's stock is always stored internally as a single integer in its
+    // base unit (the smallest one, e.g. "un" or "kg"). Everything the user sees
+    // (stock cards, restock previews, low-stock alerts) is derived from that one
+    // number, converted on the fly into a mixed breakdown of larger units
+    // (e.g. "10 CX, 2 Emb, 3 Un"). This keeps the math exact (no drift between
+    // separately-tracked unit counters) while still matching how people count
+    // physical stock.
+
+    // Returns the full unit list for a product, always including the base unit
+    // (factor 1), sorted largest-factor-first. Falls back gracefully for
+    // products created before multi-unit support existed.
+    function getProductUnits(p) {
+      const base = { name: p.unit || "un", factor: 1 };
+      const extra = Array.isArray(p.units) ? p.units.filter(u => u.name && u.factor > 1) : [];
+      const all = [base, ...extra];
+      const seen = new Set();
+      const deduped = all.filter(u => {
+        const key = u.name.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return deduped.sort((a, b) => b.factor - a.factor);
+    }
+
+    // Greedy largest-unit-first breakdown of a base-unit quantity, e.g.
+    // 255 with units [CX:24, Emb:6, Un:1] -> [{name:CX,qty:10},{name:Emb,qty:2},{name:Un,qty:3}]
+    function stockBreakdown(p) {
+      const units = getProductUnits(p);
+      let remaining = Math.max(0, Math.round(p.qty || 0));
+      const parts = [];
+      units.forEach((u, idx) => {
+        const isLast = idx === units.length - 1;
+        const count = isLast ? remaining : Math.floor(remaining / u.factor);
+        remaining -= count * u.factor;
+        if (count > 0 || (isLast && parts.length === 0)) parts.push({ name: u.name, qty: count });
+      });
+      return parts;
+    }
+
+    function formatBreakdown(p) {
+      return stockBreakdown(p).map(part => `${part.qty} ${part.name}`).join(", ");
+    }
+
+    // Convert an amount expressed in a given unit name into base units for this product.
+    function toBaseUnits(p, amount, unitName) {
+      const units = getProductUnits(p);
+      const match = units.find(u => u.name.toLowerCase() === (unitName || "").toLowerCase());
+      const factor = match ? match.factor : 1;
+      return Math.round(amount * factor);
+    }
+
     // Stock management
     function renderStock() {
       const container = document.getElementById("stock-grid");
@@ -2474,8 +2548,8 @@
               <div class="font-bold text-base text-teal">${p.name}</div>
               <div class="text-xs text-grey">${p.category}</div>
             </div>
-            <span class="px-2.5 py-1 rounded text-xs font-bold ${p.qty <= p.minStock ? 'bg-brandRed/20 text-brandRed animate-pulse' : 'bg-teal/20 text-teal'}">
-              Qtd: ${p.qty} ${p.unit}
+            <span class="px-2.5 py-1 rounded text-xs font-bold text-right ${p.qty <= p.minStock ? 'bg-brandRed/20 text-brandRed animate-pulse' : 'bg-teal/20 text-teal'}">
+              ${formatBreakdown(p)}
             </span>
           </div>
           <div class="flex justify-between items-center text-sm">
@@ -2496,28 +2570,46 @@
       if (!prod) return;
       restockProductId = id;
       document.getElementById("restock-prod-name").innerText = prod.name;
-      document.getElementById("restock-prod-current").innerText = `${prod.qty} ${prod.unit}`;
+      document.getElementById("restock-prod-current").innerText = formatBreakdown(prod);
       document.getElementById("restock-qty").value = "";
       document.getElementById("restock-reason").value = "";
+      const unitSelect = document.getElementById("restock-unit");
+      const units = getProductUnits(prod);
+      unitSelect.innerHTML = units.map(u => `<option value="${u.name}">${u.name}${u.factor > 1 ? ` (1 ${u.name} = ${u.factor} ${prod.unit})` : ''}</option>`).join('');
+      document.getElementById("restock-preview").innerText = "";
       openModal("mod-restock");
       setTimeout(() => document.getElementById("restock-qty").focus(), 50);
     }
 
+    function renderRestockPreview() {
+      const prod = dbState.stockProducts.find(p => p.id === restockProductId);
+      if (!prod) return;
+      const amount = parseFloat(document.getElementById("restock-qty").value);
+      const unitName = document.getElementById("restock-unit").value;
+      const preview = document.getElementById("restock-preview");
+      if (isNaN(amount) || amount <= 0) { preview.innerText = ""; return; }
+      const baseAmount = toBaseUnits(prod, amount, unitName);
+      const projected = { ...prod, qty: prod.qty + baseAmount };
+      preview.innerText = `= +${baseAmount} ${prod.unit} → novo stock: ${formatBreakdown(projected)}`;
+    }
+
     function confirmRestock() {
-      const amount = parseInt(document.getElementById("restock-qty").value);
+      const amount = parseFloat(document.getElementById("restock-qty").value);
+      const unitName = document.getElementById("restock-unit").value;
       const reason = document.getElementById("restock-reason").value.trim() || "Reabastecimento Manual";
       if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
 
       updateState(() => {
         const prod = dbState.stockProducts.find(p => p.id === restockProductId);
         if (prod) {
-          prod.qty += amount;
+          const baseAmount = toBaseUnits(prod, amount, unitName);
+          prod.qty += baseAmount;
           dbState.stockMovements.push({
             id: "mov-" + Date.now(), timestamp: Date.now(),
-            prodId: prod.id, prodName: prod.name, qty: amount,
-            type: "in", reason
+            prodId: prod.id, prodName: prod.name, qty: baseAmount,
+            type: "in", reason: `${reason} (${amount} ${unitName})`
           });
-          logAudit("Restock", `Adicionado +${amount} unidades de ${prod.name}`);
+          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}`);
         }
       });
       closeModal("mod-restock");
@@ -2525,26 +2617,82 @@
     }
 
     let editProductId = null;
+    // Draft list of extra (larger) units being edited in the product modal,
+    // e.g. [{name:"emb", factor:6}, {name:"cx", factor:24}]. The base unit
+    // itself (factor 1) is handled separately via the "prod-unit" field.
+    let productUnitsDraft = [];
+
+    function addProductUnitRow() {
+      productUnitsDraft.push({ name: "", factor: "" });
+      renderProductUnitsDraft();
+    }
+
+    function removeProductUnitRow(idx) {
+      productUnitsDraft.splice(idx, 1);
+      renderProductUnitsDraft();
+      renderProductStockPreview();
+    }
+
+    function updateProductUnitDraft(idx, field, value) {
+      productUnitsDraft[idx][field] = field === "factor" ? parseFloat(value) : value;
+      renderProductStockPreview();
+    }
+
+    function renderProductUnitsDraft() {
+      const baseUnit = document.getElementById("prod-unit").value || "un";
+      const container = document.getElementById("prod-units-list");
+      container.innerHTML = productUnitsDraft.map((u, idx) => `
+        <div class="flex items-center gap-2">
+          <input type="text" value="${u.name}" oninput="updateProductUnitDraft(${idx}, 'name', this.value)" placeholder="Ex: cx, emb, saco" class="c-input flex-1 p-2 rounded-lg text-xs">
+          <span class="text-xs text-grey whitespace-nowrap">= </span>
+          <input type="number" value="${u.factor}" oninput="updateProductUnitDraft(${idx}, 'factor', this.value)" placeholder="24" class="c-input w-20 p-2 rounded-lg text-xs">
+          <span class="text-xs text-grey whitespace-nowrap">${baseUnit}</span>
+          <button type="button" onclick="removeProductUnitRow(${idx})" class="text-brandRed text-xs font-bold px-1">✕</button>
+        </div>
+      `).join('') || `<p class="text-[11px] text-grey italic">Nenhuma unidade extra. Stock será mostrado apenas em "${baseUnit}".</p>`;
+    }
+
+    function onProductBaseUnitChange() {
+      document.getElementById("prod-qty-unit-label").innerText = document.getElementById("prod-unit").value || "un";
+      renderProductUnitsDraft();
+      renderProductStockPreview();
+    }
+
+    function renderProductStockPreview() {
+      const preview = document.getElementById("prod-stock-preview");
+      const qty = parseInt(document.getElementById("prod-qty").value);
+      if (isNaN(qty)) { preview.innerText = ""; return; }
+      const draftProd = {
+        qty, unit: document.getElementById("prod-unit").value || "un",
+        units: productUnitsDraft.filter(u => u.name && u.factor > 1)
+      };
+      preview.innerText = `Mostrado como: ${formatBreakdown(draftProd)}`;
+    }
+
     function openAddProductModal() {
       editProductId = null;
+      productUnitsDraft = [];
       document.getElementById("prod-name").value = "";
       document.getElementById("prod-category").value = "";
       document.getElementById("prod-unit").value = "un";
       document.getElementById("prod-price").value = "";
       document.getElementById("prod-qty").value = "";
       document.getElementById("prod-min").value = "10";
+      onProductBaseUnitChange();
       openModal("mod-product");
     }
 
     function editProductModal(id) {
       editProductId = id;
       const p = dbState.stockProducts.find(prod => prod.id === id);
+      productUnitsDraft = Array.isArray(p.units) ? p.units.map(u => ({ ...u })) : [];
       document.getElementById("prod-name").value = p.name;
       document.getElementById("prod-category").value = p.category;
       document.getElementById("prod-unit").value = p.unit;
       document.getElementById("prod-price").value = p.price;
       document.getElementById("prod-qty").value = p.qty;
       document.getElementById("prod-min").value = p.minStock;
+      onProductBaseUnitChange();
       openModal("mod-product");
     }
 
@@ -2552,19 +2700,25 @@
       const name = document.getElementById("prod-name").value.trim();
       const price = parseFloat(document.getElementById("prod-price").value);
       const qty = parseInt(document.getElementById("prod-qty").value) || 0;
+      const unit = document.getElementById("prod-unit").value.trim() || "un";
+      const units = productUnitsDraft
+        .filter(u => u.name && u.name.trim() && u.factor > 1)
+        .map(u => ({ name: u.name.trim(), factor: u.factor }));
       if (!name || isNaN(price)) return showToast("Dados em falta", "error");
 
       updateState(() => {
         if (editProductId) {
           const prod = dbState.stockProducts.find(p => p.id === editProductId);
           prod.name = name; prod.category = document.getElementById("prod-category").value;
-          prod.unit = document.getElementById("prod-unit").value; prod.price = price;
+          prod.unit = unit; prod.price = price;
           prod.qty = qty; prod.minStock = parseInt(document.getElementById("prod-min").value);
+          prod.units = units;
         } else {
           dbState.stockProducts.push({
             id: Date.now(), name, category: document.getElementById("prod-category").value,
-            unit: document.getElementById("prod-unit").value, price, qty,
-            minStock: parseInt(document.getElementById("prod-min").value) || 10
+            unit, price, qty,
+            minStock: parseInt(document.getElementById("prod-min").value) || 10,
+            units
           });
         }
       });
