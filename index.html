@@ -338,6 +338,23 @@
             <button onclick="openAddProductModal()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">+ Novo Produto</button>
           </div>
           <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+          <div class="flex justify-between items-center pt-4">
+            <h2 class="text-lg font-bold text-teal">Histórico de Compras</h2>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-grey">Fornecedor:</span>
+              <select id="purchase-supplier-filter" onchange="renderPurchaseHistory()" class="c-input p-2 rounded-lg text-xs">
+                <option value="">Todos</option>
+              </select>
+            </div>
+          </div>
+          <div class="c-card p-4 rounded-xl text-center max-w-xs"><div class="text-grey text-xs font-semibold tracking-wider">TOTAL GASTO (FILTRO)</div><div id="purchase-total-spent" class="text-2xl font-black text-gold">0,00 MT</div></div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <table class="w-full text-left text-sm">
+              <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Produto</th><th class="p-3">Qtd Comprada</th><th class="p-3">Fornecedor</th><th class="p-3">Nº Fatura</th><th class="p-3">Custo</th></tr></thead>
+              <tbody id="purchase-history-table-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <!-- Page: Quebras -->
@@ -704,6 +721,17 @@
         <label class="block text-xs text-grey mb-1">Custo Total Pago (MT, opcional)</label>
         <input type="number" id="restock-total-cost" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 1800 pelas 3 cx" oninput="renderRestockPreview()">
         <p class="text-[11px] text-grey mt-1">Se preencher, o custo médio do produto é recalculado automaticamente.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-grey mb-1">Fornecedor (opcional)</label>
+          <input type="text" id="restock-supplier" list="supplier-list" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Distribuidora Maputo">
+          <datalist id="supplier-list"></datalist>
+        </div>
+        <div>
+          <label class="block text-xs text-grey mb-1">Nº Fatura (opcional)</label>
+          <input type="text" id="restock-invoice" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: FT-0231">
+        </div>
       </div>
       <div>
         <label class="block text-xs text-grey mb-1">Motivo (opcional)</label>
@@ -2708,6 +2736,41 @@
           </div>
         </div>
       `).join('');
+      renderPurchaseHistory();
+    }
+
+    function renderPurchaseHistory() {
+      const purchases = dbState.stockMovements
+        .filter(m => m.type === "in")
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      // Keep the supplier filter's options in sync, preserving current selection
+      const filterEl = document.getElementById("purchase-supplier-filter");
+      const currentVal = filterEl.value;
+      const suppliers = [...new Set(purchases.filter(m => m.supplier).map(m => m.supplier))].sort();
+      filterEl.innerHTML = `<option value="">Todos</option>` + suppliers.map(s => `<option value="${s}">${s}</option>`).join('');
+      filterEl.value = suppliers.includes(currentVal) ? currentVal : "";
+
+      const filtered = filterEl.value ? purchases.filter(m => m.supplier === filterEl.value) : purchases;
+
+      const totalSpent = filtered.reduce((sum, m) => sum + (m.purchaseCost || 0), 0);
+      document.getElementById("purchase-total-spent").innerText = fmtMoney(totalSpent);
+
+      const tbody = document.getElementById("purchase-history-table-body");
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Nenhuma compra registada ainda.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = filtered.map(m => `
+        <tr class="border-b border-light/50 hover:bg-light/20 transition">
+          <td class="p-3">${fmtDate(m.timestamp)}</td>
+          <td class="p-3 font-semibold">${m.prodName}</td>
+          <td class="p-3">${m.purchaseQty ? `${m.purchaseQty} ${m.purchaseUnit}` : m.qty}</td>
+          <td class="p-3">${m.supplier || '—'}</td>
+          <td class="p-3 text-grey">${m.invoiceNumber || '—'}</td>
+          <td class="p-3 ${m.purchaseCost ? 'text-gold font-semibold' : 'text-grey'}">${m.purchaseCost ? fmtMoney(m.purchaseCost) : '—'}</td>
+        </tr>
+      `).join('');
     }
 
     let restockProductId = null;
@@ -2721,6 +2784,9 @@
       document.getElementById("restock-qty").value = "";
       document.getElementById("restock-total-cost").value = "";
       document.getElementById("restock-reason").value = "";
+      document.getElementById("restock-supplier").value = "";
+      document.getElementById("restock-invoice").value = "";
+      populateSupplierDatalist();
       const unitSelect = document.getElementById("restock-unit");
       const units = getProductUnits(prod);
       unitSelect.innerHTML = units.map(u => `<option value="${u.name}">${u.name}${u.factor > 1 ? ` (1 ${u.name} = ${u.factor} ${prod.unit})` : ''}</option>`).join('');
@@ -2760,11 +2826,20 @@
       return ((oldQty * oldCost) + (addedBaseQty * newCostPerBase)) / totalQty;
     }
 
+    function populateSupplierDatalist() {
+      const suppliers = [...new Set(
+        dbState.stockMovements.filter(m => m.supplier).map(m => m.supplier)
+      )].sort();
+      document.getElementById("supplier-list").innerHTML = suppliers.map(s => `<option value="${s}">`).join('');
+    }
+
     function confirmRestock() {
       const amount = parseFloat(document.getElementById("restock-qty").value);
       const unitName = document.getElementById("restock-unit").value;
       const totalCost = parseFloat(document.getElementById("restock-total-cost").value);
       const reason = document.getElementById("restock-reason").value.trim() || "Reabastecimento Manual";
+      const supplier = document.getElementById("restock-supplier").value.trim();
+      const invoiceNumber = document.getElementById("restock-invoice").value.trim();
       if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
 
       updateState(() => {
@@ -2772,22 +2847,27 @@
         if (prod) {
           const baseAmount = toBaseUnits(prod, amount, unitName);
           let costNote = "";
+          let purchaseCost = null;
           if (!isNaN(totalCost) && totalCost > 0) {
             const oldCost = prod.cost || 0;
             prod.cost = weightedAverageCost(prod, baseAmount, totalCost);
             costNote = ` | Custo: ${totalCost} MT (${oldCost.toFixed(2)}→${prod.cost.toFixed(2)} MT/${prod.unit})`;
+            purchaseCost = totalCost;
           }
           prod.qty += baseAmount;
           dbState.stockMovements.push({
             id: "mov-" + Date.now(), timestamp: Date.now(),
             prodId: prod.id, prodName: prod.name, qty: baseAmount,
-            type: "in", reason: `${reason} (${amount} ${unitName})${costNote}`
+            type: "in", reason: `${reason} (${amount} ${unitName})${costNote}`,
+            supplier: supplier || null, invoiceNumber: invoiceNumber || null,
+            purchaseUnit: unitName, purchaseQty: amount, purchaseCost
           });
-          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}${costNote}`);
+          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}${costNote}${supplier ? ` | Fornecedor: ${supplier}` : ''}`);
         }
       });
       closeModal("mod-restock");
       showToast("Stock atualizado com sucesso!");
+      renderPurchaseHistory();
     }
 
     let editProductId = null;
