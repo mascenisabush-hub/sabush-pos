@@ -604,7 +604,7 @@
         <div><label class="block text-xs text-grey mb-1">Unidade Base (menor)</label><input type="text" id="prod-unit" oninput="onProductBaseUnitChange()" class="c-input w-full p-2.5 rounded-lg text-sm" value="un" placeholder="Ex: un, kg"></div>
       </div>
       <div class="grid grid-cols-3 gap-3">
-        <div><label class="block text-xs text-grey mb-1">Preço Venda (MT)</label><input type="number" id="prod-price" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+        <div><label class="block text-xs text-grey mb-1">Preço Venda (MT)</label><input type="number" id="prod-price" oninput="renderProductUnitsDraft()" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
         <div>
           <label class="block text-xs text-grey mb-1">Stock Atual (<span id="prod-qty-unit-label">un</span>)</label>
           <input type="number" id="prod-qty" oninput="renderProductStockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm">
@@ -1972,10 +1972,13 @@
           </button>`;
         // Secondary, smaller chips let the cashier optionally sell in a larger
         // unit (cx, emb...) — only shown when the product actually defines them.
-        const secondary = extraUnits.map(u => `
-          <button onclick="addQuickItemToCurrentRound('${item.name}', ${item.price * u.factor}, '${u.name}', ${u.factor})" class="bg-light/40 border border-light px-2 py-0.5 rounded-full text-[10px] text-grey hover:bg-gold/20 hover:text-gold hover:border-gold transition">
-            +${u.name} (${item.price * u.factor} MT)
-          </button>`).join('');
+        const secondary = extraUnits.map(u => {
+          const unitPrice = (u.price != null && !isNaN(u.price)) ? u.price : item.price * u.factor;
+          return `
+          <button onclick="addQuickItemToCurrentRound('${item.name}', ${unitPrice}, '${u.name}', ${u.factor})" class="bg-light/40 border border-light px-2 py-0.5 rounded-full text-[10px] text-grey hover:bg-gold/20 hover:text-gold hover:border-gold transition">
+            +${u.name} (${unitPrice} MT)
+          </button>`;
+        }).join('');
         return `<div class="flex flex-col items-start gap-1">${primary}${secondary ? `<div class="flex flex-wrap gap-1 pl-1">${secondary}</div>` : ''}</div>`;
       }).join('');
     }
@@ -2653,22 +2656,28 @@
     }
 
     function updateProductUnitDraft(idx, field, value) {
-      productUnitsDraft[idx][field] = field === "factor" ? parseFloat(value) : value;
+      if (field === "factor") productUnitsDraft[idx][field] = parseFloat(value);
+      else if (field === "price") productUnitsDraft[idx][field] = value === "" ? null : parseFloat(value);
+      else productUnitsDraft[idx][field] = value;
       renderProductStockPreview();
     }
 
     function renderProductUnitsDraft() {
       const baseUnit = document.getElementById("prod-unit").value || "un";
+      const basePrice = parseFloat(document.getElementById("prod-price").value) || 0;
       const container = document.getElementById("prod-units-list");
-      container.innerHTML = productUnitsDraft.map((u, idx) => `
+      container.innerHTML = productUnitsDraft.map((u, idx) => {
+        const autoPrice = basePrice * (u.factor || 0);
+        return `
         <div class="flex items-center gap-2">
           <input type="text" value="${u.name}" oninput="updateProductUnitDraft(${idx}, 'name', this.value)" placeholder="Ex: cx, emb, saco" class="c-input flex-1 p-2 rounded-lg text-xs">
           <span class="text-xs text-grey whitespace-nowrap">= </span>
-          <input type="number" value="${u.factor}" oninput="updateProductUnitDraft(${idx}, 'factor', this.value)" placeholder="24" class="c-input w-20 p-2 rounded-lg text-xs">
+          <input type="number" value="${u.factor}" oninput="updateProductUnitDraft(${idx}, 'factor', this.value)" placeholder="24" class="c-input w-16 p-2 rounded-lg text-xs">
           <span class="text-xs text-grey whitespace-nowrap">${baseUnit}</span>
+          <input type="number" value="${u.price != null ? u.price : ''}" oninput="updateProductUnitDraft(${idx}, 'price', this.value)" placeholder="${autoPrice ? `auto: ${autoPrice}` : 'Preço MT'}" class="c-input w-24 p-2 rounded-lg text-xs" title="Deixe vazio para calcular automaticamente (preço base x quantidade)">
           <button type="button" onclick="removeProductUnitRow(${idx})" class="text-brandRed text-xs font-bold px-1">✕</button>
-        </div>
-      `).join('') || `<p class="text-[11px] text-grey italic">Nenhuma unidade extra. Stock será mostrado apenas em "${baseUnit}".</p>`;
+        </div>`;
+      }).join('') || `<p class="text-[11px] text-grey italic">Nenhuma unidade extra. Stock será mostrado apenas em "${baseUnit}".</p>`;
     }
 
     function onProductBaseUnitChange() {
@@ -2722,7 +2731,7 @@
       const unit = document.getElementById("prod-unit").value.trim() || "un";
       const units = productUnitsDraft
         .filter(u => u.name && u.name.trim() && u.factor > 1)
-        .map(u => ({ name: u.name.trim(), factor: u.factor }));
+        .map(u => ({ name: u.name.trim(), factor: u.factor, price: (u.price != null && !isNaN(u.price)) ? u.price : null }));
       if (!name || isNaN(price)) return showToast("Dados em falta", "error");
 
       updateState(() => {
