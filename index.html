@@ -280,15 +280,16 @@
               <button onclick="exportHistoryCSV()" class="c-input px-4 py-2 rounded-lg text-sm hover:bg-light transition">Exportar CSV</button>
             </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">PAGO</div><div id="hist-sum-paid" class="text-2xl font-black text-teal">0,00 MT</div></div>
             <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">DÍVIDA EM ABERTO</div><div id="hist-sum-debt" class="text-2xl font-black text-brandRed">0,00 MT</div></div>
             <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">TOTAL RECEITA</div><div id="hist-sum-total" class="text-2xl font-black text-gold">0,00 MT</div></div>
+            <div class="c-card p-4 rounded-xl text-center"><div class="text-grey text-xs font-semibold tracking-wider">LUCRO BRUTO</div><div id="hist-sum-profit" class="text-2xl font-black text-teal">0,00 MT</div></div>
           </div>
           <div class="c-card rounded-xl overflow-hidden">
             <div class="overflow-x-auto">
               <table class="w-full text-left border-collapse text-sm">
-                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Mesa/Conta</th><th class="p-3">Total</th><th class="p-3">Pago</th><th class="p-3">Estado</th><th class="p-3">Ações</th></tr></thead>
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Data</th><th class="p-3">Mesa/Conta</th><th class="p-3">Total</th><th class="p-3">Pago</th><th class="p-3">Lucro</th><th class="p-3">Estado</th><th class="p-3">Ações</th></tr></thead>
                 <tbody id="history-table-body"></tbody>
               </table>
             </div>
@@ -603,15 +604,24 @@
         <div><label class="block text-xs text-grey mb-1">Categoria</label><input type="text" id="prod-category" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Bebidas/Alimentação"></div>
         <div><label class="block text-xs text-grey mb-1">Unidade Base (menor)</label><input type="text" id="prod-unit" oninput="onProductBaseUnitChange()" class="c-input w-full p-2.5 rounded-lg text-sm" value="un" placeholder="Ex: un, kg"></div>
       </div>
-      <div class="grid grid-cols-3 gap-3">
-        <div><label class="block text-xs text-grey mb-1">Preço Venda (MT)</label><input type="number" id="prod-price" oninput="renderProductUnitsDraft()" class="c-input w-full p-2.5 rounded-lg text-sm"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-grey mb-1">Preço Custo (MT / <span id="prod-cost-unit-label">un</span>)</label>
+          <input type="number" id="prod-cost" oninput="renderProductStockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Quanto custa comprar 1 un">
+        </div>
+        <div>
+          <label class="block text-xs text-grey mb-1">Preço Venda (MT)</label>
+          <input type="number" id="prod-price" oninput="renderProductUnitsDraft(); renderProductStockPreview();" class="c-input w-full p-2.5 rounded-lg text-sm">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-xs text-grey mb-1">Stock Atual (<span id="prod-qty-unit-label">un</span>)</label>
           <input type="number" id="prod-qty" oninput="renderProductStockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm">
         </div>
         <div><label class="block text-xs text-grey mb-1">Stock Mínimo</label><input type="number" id="prod-min" class="c-input w-full p-2.5 rounded-lg text-sm" value="10"></div>
       </div>
-      <div id="prod-stock-preview" class="text-xs text-grey font-mono"></div>
+      <div id="prod-stock-preview" class="text-xs text-grey font-mono space-y-0.5"></div>
 
       <div class="border-t border-light pt-3 space-y-2">
         <div class="flex items-center justify-between">
@@ -644,7 +654,12 @@
           <select id="restock-unit" onchange="renderRestockPreview()" class="c-input w-full p-2.5 rounded-lg text-sm"></select>
         </div>
       </div>
-      <div id="restock-preview" class="text-xs text-grey font-mono"></div>
+      <div id="restock-preview" class="text-xs text-grey font-mono whitespace-pre-line"></div>
+      <div>
+        <label class="block text-xs text-grey mb-1">Custo Total Pago (MT, opcional)</label>
+        <input type="number" id="restock-total-cost" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: 1800 pelas 3 cx" oninput="renderRestockPreview()">
+        <p class="text-[11px] text-grey mt-1">Se preencher, o custo médio do produto é recalculado automaticamente.</p>
+      </div>
       <div>
         <label class="block text-xs text-grey mb-1">Motivo (opcional)</label>
         <input type="text" id="restock-reason" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: Compra ao fornecedor">
@@ -865,7 +880,7 @@
       ],
       staffList: [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }],
       stockProducts: [
-        { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, qty: 255, unit: "un", minStock: 20, units: [{ name: "emb", factor: 6 }, { name: "cx", factor: 24 }] },
+        { id: 1, name: "Cerveja 2M", category: "Bebidas", price: 80, cost: 50, qty: 255, unit: "un", minStock: 20, units: [{ name: "emb", factor: 6 }, { name: "cx", factor: 24 }] },
         { id: 2, name: "Cerveja Laurentina", category: "Bebidas", price: 95, qty: 50, unit: "un", minStock: 10 },
         { id: 3, name: "Frango Grelhado", category: "Alimentação", price: 450, qty: 30, unit: "dose", minStock: 5 },
         { id: 4, name: "Batata Frita", category: "Alimentação", price: 150, qty: 40, unit: "dose", minStock: 8 }
@@ -2258,13 +2273,18 @@
           currentDetailTab.currentRound = [];
         }
 
-        // Process stock deduction
+        // Process stock deduction + track cost of goods sold (COGS) for margin reporting
+        let cogs = 0;
+        let hasCostData = false;
         currentDetailTab.rounds.forEach(round => {
           round.forEach(item => {
             const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
             if (prod) {
               const baseQty = item.qty * (item.factor || 1);
               prod.qty -= baseQty;
+              // Snapshot the product's average cost at time of sale so later
+              // cost changes don't retroactively rewrite past margins.
+              if (prod.cost > 0) { cogs += baseQty * prod.cost; hasCostData = true; }
               dbState.stockMovements.push({
                 id: "mov-" + Date.now(), timestamp: Date.now(),
                 prodId: prod.id, prodName: prod.name, qty: -baseQty,
@@ -2291,7 +2311,12 @@
           debtor,
           reason,
           payments: [...detailTabPayments],
-          items: currentDetailTab.rounds.flatMap(r => r.map(i => ({ name: i.name, qty: i.qty, price: i.price })))
+          items: currentDetailTab.rounds.flatMap(r => r.map(i => ({ name: i.name, qty: i.qty, price: i.price }))),
+          // cost/profit are approximate: cost is computed on pre-discount item
+          // prices, so a manual discount slightly reduces real margin below
+          // this figure. Only set when at least one item had a cost price defined.
+          cost: hasCostData ? cogs : null,
+          profit: hasCostData ? (finalTotal - cogs) : null
         });
 
         // Filter out closed tab
@@ -2307,15 +2332,17 @@
     function renderHistory() {
       const tbody = document.getElementById("history-table-body");
       
-      let sumPaid = 0, sumDebt = 0;
+      let sumPaid = 0, sumDebt = 0, sumProfit = 0;
       dbState.history.forEach(h => {
         sumPaid += h.paid;
         if (h.status === "UNPAID") sumDebt += (h.total - h.paid);
+        if (h.profit != null) sumProfit += h.profit;
       });
 
       document.getElementById("hist-sum-paid").innerText = fmtMoney(sumPaid);
       document.getElementById("hist-sum-debt").innerText = fmtMoney(sumDebt);
       document.getElementById("hist-sum-total").innerText = fmtMoney(sumPaid + sumDebt);
+      document.getElementById("hist-sum-profit").innerText = fmtMoney(sumProfit);
 
       tbody.innerHTML = dbState.history.map(h => {
         const remaining = h.total - h.paid;
@@ -2325,6 +2352,7 @@
             <td class="p-3 font-semibold">${h.tabName} ${h.table ? '('+h.table+')' : ''}</td>
             <td class="p-3 font-bold">${fmtMoney(h.total)}</td>
             <td class="p-3 text-teal font-semibold">${fmtMoney(h.paid)}</td>
+            <td class="p-3 ${h.profit != null ? 'text-gold font-semibold' : 'text-grey'}">${h.profit != null ? fmtMoney(h.profit) : '—'}</td>
             <td class="p-3">
               <span class="px-2 py-0.5 rounded text-xs font-bold ${h.status === 'PAID' ? 'bg-teal/20 text-teal' : 'bg-brandRed/20 text-brandRed'}">
                 ${h.status === 'PAID' ? 'Pago' : 'Fiado'}
@@ -2594,6 +2622,7 @@
       document.getElementById("restock-prod-name").innerText = prod.name;
       document.getElementById("restock-prod-current").innerText = formatBreakdown(prod);
       document.getElementById("restock-qty").value = "";
+      document.getElementById("restock-total-cost").value = "";
       document.getElementById("restock-reason").value = "";
       const unitSelect = document.getElementById("restock-unit");
       const units = getProductUnits(prod);
@@ -2608,16 +2637,36 @@
       if (!prod) return;
       const amount = parseFloat(document.getElementById("restock-qty").value);
       const unitName = document.getElementById("restock-unit").value;
+      const totalCost = parseFloat(document.getElementById("restock-total-cost").value);
       const preview = document.getElementById("restock-preview");
       if (isNaN(amount) || amount <= 0) { preview.innerText = ""; return; }
       const baseAmount = toBaseUnits(prod, amount, unitName);
       const projected = { ...prod, qty: prod.qty + baseAmount };
-      preview.innerText = `= +${baseAmount} ${prod.unit} → novo stock: ${formatBreakdown(projected)}`;
+      let text = `= +${baseAmount} ${prod.unit} → novo stock: ${formatBreakdown(projected)}`;
+      if (!isNaN(totalCost) && totalCost > 0) {
+        const newAvgCost = weightedAverageCost(prod, baseAmount, totalCost);
+        text += `\nCusto médio atualizado: ${(prod.cost || 0).toFixed(2)} → ${newAvgCost.toFixed(2)} MT/${prod.unit}`;
+      }
+      preview.innerText = text;
+    }
+
+    // Recomputes a product's average cost per base unit after a purchase,
+    // weighted by how much stock existed before vs how much is being added.
+    // E.g. had 100un @ 30MT, buying 100un for a total of 3600MT (36MT/un)
+    // -> new average = (100*30 + 3600) / 200 = 33MT/un.
+    function weightedAverageCost(prod, addedBaseQty, totalCostPaid) {
+      const oldQty = Math.max(0, prod.qty || 0);
+      const oldCost = prod.cost || 0;
+      const newCostPerBase = totalCostPaid / addedBaseQty;
+      const totalQty = oldQty + addedBaseQty;
+      if (totalQty <= 0) return newCostPerBase;
+      return ((oldQty * oldCost) + (addedBaseQty * newCostPerBase)) / totalQty;
     }
 
     function confirmRestock() {
       const amount = parseFloat(document.getElementById("restock-qty").value);
       const unitName = document.getElementById("restock-unit").value;
+      const totalCost = parseFloat(document.getElementById("restock-total-cost").value);
       const reason = document.getElementById("restock-reason").value.trim() || "Reabastecimento Manual";
       if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
 
@@ -2625,13 +2674,19 @@
         const prod = dbState.stockProducts.find(p => p.id === restockProductId);
         if (prod) {
           const baseAmount = toBaseUnits(prod, amount, unitName);
+          let costNote = "";
+          if (!isNaN(totalCost) && totalCost > 0) {
+            const oldCost = prod.cost || 0;
+            prod.cost = weightedAverageCost(prod, baseAmount, totalCost);
+            costNote = ` | Custo: ${totalCost} MT (${oldCost.toFixed(2)}→${prod.cost.toFixed(2)} MT/${prod.unit})`;
+          }
           prod.qty += baseAmount;
           dbState.stockMovements.push({
             id: "mov-" + Date.now(), timestamp: Date.now(),
             prodId: prod.id, prodName: prod.name, qty: baseAmount,
-            type: "in", reason: `${reason} (${amount} ${unitName})`
+            type: "in", reason: `${reason} (${amount} ${unitName})${costNote}`
           });
-          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}`);
+          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}${costNote}`);
         }
       });
       closeModal("mod-restock");
@@ -2681,7 +2736,9 @@
     }
 
     function onProductBaseUnitChange() {
-      document.getElementById("prod-qty-unit-label").innerText = document.getElementById("prod-unit").value || "un";
+      const baseUnit = document.getElementById("prod-unit").value || "un";
+      document.getElementById("prod-qty-unit-label").innerText = baseUnit;
+      document.getElementById("prod-cost-unit-label").innerText = baseUnit;
       renderProductUnitsDraft();
       renderProductStockPreview();
     }
@@ -2689,12 +2746,22 @@
     function renderProductStockPreview() {
       const preview = document.getElementById("prod-stock-preview");
       const qty = parseInt(document.getElementById("prod-qty").value);
-      if (isNaN(qty)) { preview.innerText = ""; return; }
-      const draftProd = {
-        qty, unit: document.getElementById("prod-unit").value || "un",
-        units: productUnitsDraft.filter(u => u.name && u.factor > 1)
-      };
-      preview.innerText = `Mostrado como: ${formatBreakdown(draftProd)}`;
+      const cost = parseFloat(document.getElementById("prod-cost").value);
+      const price = parseFloat(document.getElementById("prod-price").value);
+      const lines = [];
+      if (!isNaN(qty)) {
+        const draftProd = {
+          qty, unit: document.getElementById("prod-unit").value || "un",
+          units: productUnitsDraft.filter(u => u.name && u.factor > 1)
+        };
+        lines.push(`Mostrado como: ${formatBreakdown(draftProd)}`);
+      }
+      if (!isNaN(cost) && !isNaN(price)) {
+        const margin = price - cost;
+        const marginPct = cost > 0 ? ((margin / price) * 100).toFixed(0) : "—";
+        lines.push(`Margem por ${document.getElementById("prod-unit").value || "un"}: ${margin.toFixed(2)} MT (${marginPct}%)`);
+      }
+      preview.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
     }
 
     function openAddProductModal() {
@@ -2703,6 +2770,7 @@
       document.getElementById("prod-name").value = "";
       document.getElementById("prod-category").value = "";
       document.getElementById("prod-unit").value = "un";
+      document.getElementById("prod-cost").value = "";
       document.getElementById("prod-price").value = "";
       document.getElementById("prod-qty").value = "";
       document.getElementById("prod-min").value = "10";
@@ -2717,6 +2785,7 @@
       document.getElementById("prod-name").value = p.name;
       document.getElementById("prod-category").value = p.category;
       document.getElementById("prod-unit").value = p.unit;
+      document.getElementById("prod-cost").value = p.cost != null ? p.cost : "";
       document.getElementById("prod-price").value = p.price;
       document.getElementById("prod-qty").value = p.qty;
       document.getElementById("prod-min").value = p.minStock;
@@ -2727,6 +2796,8 @@
     function saveProduct() {
       const name = document.getElementById("prod-name").value.trim();
       const price = parseFloat(document.getElementById("prod-price").value);
+      const costInput = document.getElementById("prod-cost").value;
+      const cost = costInput === "" ? 0 : parseFloat(costInput);
       const qty = parseInt(document.getElementById("prod-qty").value) || 0;
       const unit = document.getElementById("prod-unit").value.trim() || "un";
       const units = productUnitsDraft
@@ -2738,13 +2809,13 @@
         if (editProductId) {
           const prod = dbState.stockProducts.find(p => p.id === editProductId);
           prod.name = name; prod.category = document.getElementById("prod-category").value;
-          prod.unit = unit; prod.price = price;
+          prod.unit = unit; prod.price = price; prod.cost = isNaN(cost) ? (prod.cost || 0) : cost;
           prod.qty = qty; prod.minStock = parseInt(document.getElementById("prod-min").value);
           prod.units = units;
         } else {
           dbState.stockProducts.push({
             id: Date.now(), name, category: document.getElementById("prod-category").value,
-            unit, price, qty,
+            unit, price, cost: isNaN(cost) ? 0 : cost, qty,
             minStock: parseInt(document.getElementById("prod-min").value) || 10,
             units
           });
