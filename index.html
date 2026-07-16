@@ -342,6 +342,11 @@
           </div>
           <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
+          <div id="expiry-alerts-wrap" class="hidden space-y-2 pt-2">
+            <h2 class="text-lg font-bold text-brandRed">Alertas de Validade</h2>
+            <div id="expiry-alerts-list" class="space-y-2"></div>
+          </div>
+
           <div class="flex justify-between items-center pt-4">
             <h2 class="text-lg font-bold text-teal">Histórico de Compras</h2>
             <div class="flex items-center gap-2">
@@ -714,6 +719,17 @@
       <div id="prod-stock-preview" class="text-xs text-grey font-mono space-y-0.5"></div>
 
       <div class="border-t border-light pt-3 space-y-2">
+        <div class="flex items-center justify-between p-3 bg-[#142035] border border-[#1a2d47] rounded-lg">
+          <div><div class="text-sm font-semibold">Produto Perecível</div><div class="text-xs text-grey">Rastrear validade por lote (ex: Frango, Batata)</div></div>
+          <input type="checkbox" id="prod-track-expiry" onchange="toggleProdExpiryFields()" class="w-5 h-5 accent-teal">
+        </div>
+        <div id="prod-expiry-warning-wrap" class="hidden">
+          <label class="block text-xs text-grey mb-1">Avisar quantos dias antes de expirar</label>
+          <input type="number" id="prod-expiry-warning-days" class="c-input w-full p-2.5 rounded-lg text-sm" value="3" min="1">
+        </div>
+      </div>
+
+      <div class="border-t border-light pt-3 space-y-2">
         <div class="flex items-center justify-between">
           <label class="block text-xs text-grey">Unidades de Compra/Venda (opcional)</label>
           <button type="button" onclick="addProductUnitRow()" class="text-xs font-bold text-teal hover:underline">+ Adicionar Unidade</button>
@@ -760,6 +776,11 @@
           <label class="block text-xs text-grey mb-1">Nº Fatura (opcional)</label>
           <input type="text" id="restock-invoice" class="c-input w-full p-2.5 rounded-lg text-sm" placeholder="Ex: FT-0231">
         </div>
+      </div>
+      <div id="restock-expiry-wrap" class="hidden">
+        <label class="block text-xs text-grey mb-1">Validade deste lote</label>
+        <input type="date" id="restock-expiry-date" class="c-input w-full p-2.5 rounded-lg text-sm">
+        <p class="text-[11px] text-grey mt-1">Produto perecível — este lote será monitorizado para alertas de validade.</p>
       </div>
       <div>
         <label class="block text-xs text-grey mb-1">Motivo (opcional)</label>
@@ -2387,6 +2408,11 @@
             if (prod) {
               const baseQty = item.qty * (item.factor || 1);
               prod.qty -= baseQty;
+              // For perishables, consume the soonest-to-expire batch(es) first so
+              // batch quantities stay meaningful for expiry alerts.
+              if (prod.trackExpiry && Array.isArray(prod.batches) && prod.batches.length > 0) {
+                deductFromBatchesFIFO(prod, baseQty);
+              }
               // Snapshot the product's average cost at time of sale so later
               // cost changes don't retroactively rewrite past margins.
               if (prod.cost > 0) { cogs += baseQty * prod.cost; hasCostData = true; }
@@ -2744,10 +2770,47 @@
       return Math.round(amount * factor);
     }
 
+    // Consumes stock from a perishable product's batches, oldest expiry first,
+    // so batch quantities keep reflecting what's most likely still on the shelf.
+    function deductFromBatchesFIFO(prod, baseQtySold) {
+      let remaining = baseQtySold;
+      prod.batches.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
+      for (const batch of prod.batches) {
+        if (remaining <= 0) break;
+        const take = Math.min(batch.qty, remaining);
+        batch.qty -= take;
+        remaining -= take;
+      }
+      prod.batches = prod.batches.filter(b => b.qty > 0);
+    }
+
     // Stock management
+    function daysUntil(dateStr) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const target = new Date(dateStr + "T00:00:00");
+      return Math.round((target - today) / 86400000);
+    }
+
+    // Returns the smallest days-until-expiry among a product's remaining batches
+    // (negative = already expired), or null if it isn't tracked / has no batches left.
+    function getNearestExpiryDays(p) {
+      if (!p.trackExpiry || !Array.isArray(p.batches) || p.batches.length === 0) return null;
+      let soonest = null;
+      p.batches.forEach(b => {
+        if (b.qty <= 0) return;
+        const days = daysUntil(b.expiryDate);
+        if (soonest === null || days < soonest) soonest = days;
+      });
+      return soonest;
+    }
+
     function renderStock() {
       const container = document.getElementById("stock-grid");
-      container.innerHTML = dbState.stockProducts.map(p => `
+      container.innerHTML = dbState.stockProducts.map(p => {
+        const nearestDays = getNearestExpiryDays(p);
+        const warnDays = p.expiryWarningDays || 3;
+        const showExpiryBadge = nearestDays !== null && nearestDays <= warnDays;
+        return `
         <div class="c-card p-5 rounded-xl space-y-3">
           <div class="flex justify-between items-start">
             <div>
@@ -2758,6 +2821,7 @@
               ${formatBreakdown(p)}
             </span>
           </div>
+          ${showExpiryBadge ? `<div class="px-2.5 py-1 rounded text-xs font-bold text-center ${nearestDays < 0 ? 'bg-brandRed/20 text-brandRed' : 'bg-gold/20 text-gold'}">${nearestDays < 0 ? `Expirado há ${Math.abs(nearestDays)} dia(s)` : nearestDays === 0 ? 'Expira hoje' : `Expira em ${nearestDays} dia(s)`}</div>` : ''}
           <div class="flex justify-between items-center text-sm">
             <span>Preço Venda: <strong class="text-gold font-bold">${p.price} MT</strong></span>
             <div class="flex gap-1.5">
@@ -2766,8 +2830,69 @@
             </div>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
+      renderExpiryAlerts();
       renderPurchaseHistory();
+    }
+
+    // Lists every batch across all products that's near or past its expiry date,
+    // soonest first, with a one-click write-off that logs it as a quebra and
+    // pulls the stock out of both the batch and the pooled quantity.
+    function renderExpiryAlerts() {
+      const wrap = document.getElementById("expiry-alerts-wrap");
+      const list = document.getElementById("expiry-alerts-list");
+      const alerts = [];
+      dbState.stockProducts.forEach(p => {
+        if (!p.trackExpiry || !Array.isArray(p.batches)) return;
+        const warnDays = p.expiryWarningDays || 3;
+        p.batches.forEach(b => {
+          if (b.qty <= 0) return;
+          const days = daysUntil(b.expiryDate);
+          if (days <= warnDays) alerts.push({ prod: p, batch: b, days });
+        });
+      });
+      alerts.sort((a, b) => a.days - b.days);
+
+      if (alerts.length === 0) {
+        wrap.classList.add("hidden");
+        return;
+      }
+      wrap.classList.remove("hidden");
+      list.innerHTML = alerts.map(a => `
+        <div class="c-card p-3 rounded-lg flex items-center justify-between gap-3 ${a.days < 0 ? 'border-brandRed/50' : 'border-gold/50'}">
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-sm">${a.prod.name}</div>
+            <div class="text-xs text-grey">${a.batch.qty} ${a.prod.unit} · Validade: ${a.batch.expiryDate} · ${a.days < 0 ? `Expirado há ${Math.abs(a.days)} dia(s)` : a.days === 0 ? 'Expira hoje' : `Expira em ${a.days} dia(s)`}</div>
+          </div>
+          <button onclick="writeOffExpiredBatch(${a.prod.id}, '${a.batch.id}')" class="px-2.5 py-1.5 bg-brandRed/20 text-brandRed rounded text-xs font-bold hover:bg-brandRed hover:text-white transition whitespace-nowrap">Registar Quebra</button>
+        </div>
+      `).join('');
+    }
+
+    function writeOffExpiredBatch(prodId, batchId) {
+      if (!requireOperator()) return;
+      updateState(() => {
+        const prod = dbState.stockProducts.find(p => p.id === prodId);
+        if (!prod || !Array.isArray(prod.batches)) return;
+        const batch = prod.batches.find(b => b.id === batchId);
+        if (!batch) return;
+        const qty = batch.qty;
+        prod.qty = Math.max(0, prod.qty - qty);
+        prod.batches = prod.batches.filter(b => b.id !== batchId);
+        dbState.quebras.push({
+          id: Date.now(), timestamp: Date.now(), item: prod.name, qty,
+          cost: prod.cost > 0 ? qty * prod.cost : 0,
+          reason: `Validade expirada (lote de ${batch.expiryDate})`
+        });
+        dbState.stockMovements.push({
+          id: "mov-" + Date.now(), timestamp: Date.now(),
+          prodId: prod.id, prodName: prod.name, qty: -qty,
+          type: "out", reason: `Quebra por validade expirada (lote de ${batch.expiryDate})`
+        });
+        logAudit("Quebra por Validade", `${qty} ${prod.unit} de ${prod.name} escrito como perda (validade ${batch.expiryDate})`);
+      });
+      showToast("Lote registado como perda");
     }
 
     function renderPurchaseHistory() {
@@ -2918,6 +3043,8 @@
       document.getElementById("restock-reason").value = "";
       document.getElementById("restock-supplier").value = "";
       document.getElementById("restock-invoice").value = "";
+      document.getElementById("restock-expiry-date").value = "";
+      document.getElementById("restock-expiry-wrap").classList.toggle("hidden", !prod.trackExpiry);
       populateSupplierDatalist();
       const unitSelect = document.getElementById("restock-unit");
       const units = getProductUnits(prod);
@@ -2972,6 +3099,7 @@
       const reason = document.getElementById("restock-reason").value.trim() || "Reabastecimento Manual";
       const supplier = document.getElementById("restock-supplier").value.trim();
       const invoiceNumber = document.getElementById("restock-invoice").value.trim();
+      const expiryDate = document.getElementById("restock-expiry-date").value || null;
       if (isNaN(amount) || amount <= 0) return showToast("Quantidade inválida", "error");
 
       updateState(() => {
@@ -2987,6 +3115,10 @@
             purchaseCost = totalCost;
           }
           prod.qty += baseAmount;
+          if (prod.trackExpiry && expiryDate) {
+            if (!Array.isArray(prod.batches)) prod.batches = [];
+            prod.batches.push({ id: "batch-" + Date.now(), qty: baseAmount, expiryDate, addedAt: Date.now() });
+          }
           dbState.stockMovements.push({
             id: "mov-" + Date.now(), timestamp: Date.now(),
             prodId: prod.id, prodName: prod.name, qty: baseAmount,
@@ -2994,12 +3126,13 @@
             supplier: supplier || null, invoiceNumber: invoiceNumber || null,
             purchaseUnit: unitName, purchaseQty: amount, purchaseCost
           });
-          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}${costNote}${supplier ? ` | Fornecedor: ${supplier}` : ''}`);
+          logAudit("Restock", `Adicionado +${amount} ${unitName} (${baseAmount} ${prod.unit}) de ${prod.name}${costNote}${supplier ? ` | Fornecedor: ${supplier}` : ''}${expiryDate ? ` | Validade: ${expiryDate}` : ''}`);
         }
       });
       closeModal("mod-restock");
       showToast("Stock atualizado com sucesso!");
       renderPurchaseHistory();
+      renderExpiryAlerts();
     }
 
     let editProductId = null;
@@ -3083,8 +3216,16 @@
       document.getElementById("prod-price").value = "";
       document.getElementById("prod-qty").value = "";
       document.getElementById("prod-min").value = "10";
+      document.getElementById("prod-track-expiry").checked = false;
+      document.getElementById("prod-expiry-warning-days").value = "3";
+      toggleProdExpiryFields();
       onProductBaseUnitChange();
       openModal("mod-product");
+    }
+
+    function toggleProdExpiryFields() {
+      const on = document.getElementById("prod-track-expiry").checked;
+      document.getElementById("prod-expiry-warning-wrap").classList.toggle("hidden", !on);
     }
 
     function editProductModal(id) {
@@ -3098,6 +3239,9 @@
       document.getElementById("prod-price").value = p.price;
       document.getElementById("prod-qty").value = p.qty;
       document.getElementById("prod-min").value = p.minStock;
+      document.getElementById("prod-track-expiry").checked = !!p.trackExpiry;
+      document.getElementById("prod-expiry-warning-days").value = p.expiryWarningDays || 3;
+      toggleProdExpiryFields();
       onProductBaseUnitChange();
       openModal("mod-product");
     }
@@ -3109,6 +3253,8 @@
       const cost = costInput === "" ? 0 : parseFloat(costInput);
       const qty = parseInt(document.getElementById("prod-qty").value) || 0;
       const unit = document.getElementById("prod-unit").value.trim() || "un";
+      const trackExpiry = document.getElementById("prod-track-expiry").checked;
+      const expiryWarningDays = parseInt(document.getElementById("prod-expiry-warning-days").value) || 3;
       const units = productUnitsDraft
         .filter(u => u.name && u.name.trim() && u.factor > 1)
         .map(u => ({ name: u.name.trim(), factor: u.factor, price: (u.price != null && !isNaN(u.price)) ? u.price : null }));
@@ -3121,12 +3267,14 @@
           prod.unit = unit; prod.price = price; prod.cost = isNaN(cost) ? (prod.cost || 0) : cost;
           prod.qty = qty; prod.minStock = parseInt(document.getElementById("prod-min").value);
           prod.units = units;
+          prod.trackExpiry = trackExpiry; prod.expiryWarningDays = expiryWarningDays;
+          if (!Array.isArray(prod.batches)) prod.batches = [];
         } else {
           dbState.stockProducts.push({
             id: Date.now(), name, category: document.getElementById("prod-category").value,
             unit, price, cost: isNaN(cost) ? 0 : cost, qty,
             minStock: parseInt(document.getElementById("prod-min").value) || 10,
-            units
+            units, trackExpiry, expiryWarningDays, batches: []
           });
         }
       });
