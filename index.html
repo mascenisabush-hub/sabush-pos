@@ -23,6 +23,27 @@
     .c-card { background-color: var(--navy-card); border: 1px solid var(--navy-light); }
     .c-input { background-color: var(--navy-light); color: var(--white); border: 1px solid var(--navy-light); }
     .c-input:focus { border-color: var(--teal); outline: none; }
+
+    /* Thermal receipt sizing (approximates real paper widths at screen + print resolution) */
+    .receipt-58mm { width: 48mm; font-size: 10.5px; }
+    .receipt-80mm { width: 72mm; font-size: 11.5px; }
+    #receipt-print-area { line-height: 1.45; }
+    #receipt-print-area .r-line { display: flex; justify-content: space-between; gap: 6px; }
+    #receipt-print-area .r-dash { border-top: 1px dashed #000; margin: 4px 0; }
+    #receipt-print-area .r-center { text-align: center; }
+    #receipt-print-area .r-bold { font-weight: 700; }
+
+    /* Print isolation: only the receipt content is sent to the printer */
+    @media print {
+      body * { visibility: hidden !important; }
+      #receipt-print-area, #receipt-print-area * { visibility: visible !important; }
+      #receipt-print-area {
+        position: fixed; left: 0; top: 0;
+        width: auto !important; margin: 0; padding: 2mm;
+        color: #000 !important; background: #fff !important;
+      }
+      @page { margin: 0; }
+    }
   </style>
   <script>
     tailwind.config = {
@@ -422,6 +443,13 @@
                 <div><div class="text-sm font-semibold">Sincronização em Nuvem</div><div class="text-xs text-grey">Sincronizar em tempo real com Firestore</div></div>
                 <input type="checkbox" id="setting-sync-toggle" onchange="toggleSyncEnabled(this.checked)" class="w-5 h-5 accent-teal" checked>
               </div>
+              <div>
+                <label class="block text-xs text-grey mb-1">LARGURA DO RECIBO (IMPRESSORA TÉRMICA)</label>
+                <select id="setting-receipt-width" onchange="changeReceiptWidth(this.value)" class="c-input w-full p-2.5 rounded-lg text-sm">
+                  <option value="58mm">58mm (rolo pequeno)</option>
+                  <option value="80mm">80mm (rolo grande)</option>
+                </select>
+              </div>
               <div id="settings-danger-card">
                 <button onclick="confirmWipeData()" class="w-full bg-brandRed/20 border border-brandRed text-brandRed text-sm font-semibold p-2.5 rounded-lg hover:bg-brandRed hover:text-white transition">Wipe/Limpar Toda Informação</button>
               </div>
@@ -567,6 +595,23 @@
           </div>
           <button onclick="checkoutTabClose()" class="w-full bg-gold text-deep font-black p-3.5 rounded-lg text-sm hover:opacity-90">Fechar Conta & Registar Venda</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Printable/PDF Receipt -->
+  <div id="mod-receipt-print" class="hidden fixed inset-0 z-50 bg-deep/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="c-card rounded-xl w-full max-w-sm flex flex-col max-h-[92vh]">
+      <div class="p-4 flex justify-between items-center border-b border-light/50">
+        <h3 class="font-bold text-sm">Recibo</h3>
+        <button onclick="closeModal('mod-receipt-print')" class="text-grey hover:text-white p-1 text-sm font-semibold">Fechar</button>
+      </div>
+      <div class="overflow-y-auto p-4 flex justify-center bg-black/10">
+        <div id="receipt-print-area" class="receipt-58mm bg-white text-black p-3 rounded-sm font-mono"></div>
+      </div>
+      <div class="p-4 border-t border-light/50 grid grid-cols-2 gap-2">
+        <button onclick="closeModal('mod-receipt-print')" class="c-input p-2.5 rounded-lg text-xs font-bold hover:bg-light">Fechar</button>
+        <button onclick="window.print()" class="bg-gold text-deep font-black p-2.5 rounded-lg text-xs hover:opacity-90">Imprimir</button>
       </div>
     </div>
   </div>
@@ -889,7 +934,7 @@
       tables: ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"],
       auditLog: [],
       shifts: [],
-      settings: { autoLockTimer: "never", theme: "dark", syncEnabled: true },
+      settings: { autoLockTimer: "never", theme: "dark", syncEnabled: true, receiptWidth: "58mm" },
       businessProfile: { name: "", nuit: "", address: "", phone: "", email: "" },
       updatedAt: Date.now()
     };
@@ -2266,6 +2311,7 @@
     }
 
     function closeTabFinalized(status, finalTotal, paid, debtor, reason) {
+      let newHistoryEntry = null;
       updateState(() => {
         // Automatically commit any draft items in currentRound first
         if (currentDetailTab.currentRound && currentDetailTab.currentRound.length > 0) {
@@ -2298,7 +2344,7 @@
         });
 
         // Add to history with detailed items sold
-        dbState.history.push({
+        newHistoryEntry = {
           id: "hist-" + Date.now(),
           timestamp: Date.now(),
           staffId: currentStaffUser ? currentStaffUser.id : null,
@@ -2317,7 +2363,8 @@
           // this figure. Only set when at least one item had a cost price defined.
           cost: hasCostData ? cogs : null,
           profit: hasCostData ? (finalTotal - cogs) : null
-        });
+        };
+        dbState.history.push(newHistoryEntry);
 
         // Filter out closed tab
         dbState.tabs = dbState.tabs.filter(t => t.id !== currentDetailTab.id);
@@ -2326,6 +2373,53 @@
 
       closeModal("mod-tab-detail");
       showToast(`Venda registada com sucesso (${status})`);
+      if (newHistoryEntry) openReceiptPrintModal(newHistoryEntry);
+    }
+
+    // Build the printable/thermal receipt HTML for a finalized sale (or a past
+    // history entry, for reprints) and show it in the receipt modal.
+    function openReceiptPrintModal(entry) {
+      const area = document.getElementById("receipt-print-area");
+      area.className = (dbState.settings.receiptWidth === "80mm" ? "receipt-80mm" : "receipt-58mm") + " bg-white text-black p-3 rounded-sm font-mono";
+      area.innerHTML = generateReceiptHTML(entry);
+      openModal("mod-receipt-print");
+    }
+
+    function reprintHistoryReceipt(id) {
+      const entry = dbState.history.find(h => h.id === id);
+      if (!entry) return showToast("Recibo não encontrado", "error");
+      openReceiptPrintModal(entry);
+    }
+
+    function generateReceiptHTML(entry) {
+      const profile = dbState.businessProfile || {};
+      const itemsHTML = (entry.items || []).map(i => `
+        <div class="r-line"><span>${i.qty}x ${i.name}</span><span>${fmtMoney(i.price * i.qty)}</span></div>
+      `).join('');
+      const remaining = entry.total - entry.paid;
+      return `
+        <div class="r-center r-bold" style="font-size:1.15em;">${(profile.name || getBusinessDisplayName())}</div>
+        ${profile.nuit ? `<div class="r-center">NUIT: ${profile.nuit}</div>` : ''}
+        ${profile.address ? `<div class="r-center">${profile.address}</div>` : ''}
+        ${profile.phone ? `<div class="r-center">Tel: ${profile.phone}</div>` : ''}
+        <div class="r-dash"></div>
+        <div class="r-line"><span>Conta:</span><span>${entry.tabName || ''}</span></div>
+        ${entry.table ? `<div class="r-line"><span>Mesa:</span><span>${entry.table}</span></div>` : ''}
+        <div class="r-line"><span>Data:</span><span>${fmtDate(entry.timestamp)}</span></div>
+        ${entry.staffName ? `<div class="r-line"><span>Operador:</span><span>${entry.staffName}</span></div>` : ''}
+        <div class="r-dash"></div>
+        ${itemsHTML}
+        <div class="r-dash"></div>
+        <div class="r-line r-bold" style="font-size:1.1em;"><span>TOTAL</span><span>${fmtMoney(entry.total)}</span></div>
+        <div class="r-line"><span>Pago</span><span>${fmtMoney(entry.paid)}</span></div>
+        ${entry.status === 'UNPAID'
+          ? `<div class="r-line r-bold"><span>Em Dívida</span><span>${fmtMoney(remaining)}</span></div>`
+          : (remaining < 0 ? `<div class="r-line"><span>Troco</span><span>${fmtMoney(-remaining)}</span></div>` : '')}
+        ${(entry.payments && entry.payments.length) ? `<div class="r-dash"></div>` + entry.payments.map(p => `<div class="r-line"><span>${p.method}</span><span>${fmtMoney(p.amount)}</span></div>`).join('') : ''}
+        <div class="r-dash"></div>
+        <div class="r-center">Obrigado pela preferência!</div>
+        <div class="r-center">${getBusinessDisplayName()}</div>
+      `;
     }
 
     // Daily History Logic
@@ -2359,7 +2453,10 @@
               </span>
             </td>
             <td class="p-3">
-              ${h.status === 'UNPAID' ? `<button onclick="openResolveDebtModal('${h.id}')" class="text-xs text-gold hover:underline font-bold">Cobrar Dívida</button>` : '—'}
+              <div class="flex items-center gap-2">
+                ${h.status === 'UNPAID' ? `<button onclick="openResolveDebtModal('${h.id}')" class="text-xs text-gold hover:underline font-bold">Cobrar Dívida</button>` : ''}
+                <button onclick="reprintHistoryReceipt('${h.id}')" class="text-xs text-teal hover:underline font-bold">Recibo</button>
+              </div>
             </td>
           </tr>
         `;
@@ -2909,6 +3006,7 @@
     function renderSettings() {
       document.getElementById("setting-autolock").value = dbState.settings.autoLockTimer || "never";
       document.getElementById("setting-sync-toggle").checked = dbState.settings.syncEnabled !== false;
+      document.getElementById("setting-receipt-width").value = dbState.settings.receiptWidth || "58mm";
 
       const profile = dbState.businessProfile || { name: "", nuit: "", address: "", phone: "", email: "" };
       document.getElementById("profile-name").value = profile.name || "";
@@ -2986,6 +3084,11 @@
       dbState.settings.autoLockTimer = val;
       saveLocalState();
       resetActivityTimer();
+    }
+
+    function changeReceiptWidth(val) {
+      dbState.settings.receiptWidth = val;
+      saveLocalState();
     }
 
     function toggleSyncEnabled(val) {
@@ -3067,7 +3170,7 @@
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
           dbState.shifts = [];
           dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }];
-          dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true };
+          dbState.settings = { autoLockTimer: "never", theme: "dark", syncEnabled: true, receiptWidth: "58mm" };
         });
         logAudit("Wipe de Dados", `Todos os dados do sistema foram apagados por ${wipedBy} (PIN confirmado)`);
         currentShift = null;
