@@ -93,13 +93,15 @@
     </div>
   </div>
 
-  <!-- Screen 3: Staff PIN Picker -->
-  <div id="scr-staff" class="hidden min-h-screen flex flex-col justify-center items-center p-4">
-    <div class="max-w-md w-full text-center relative">
-      <button onclick="signoutFirebase()" class="absolute -top-6 left-0 flex items-center gap-1.5 text-grey hover:text-brandRed text-sm font-semibold transition"><span>←</span> Voltar</button>
-      <h2 class="text-2xl font-bold text-teal mb-2">Quem está de serviço?</h2>
-      <p class="text-grey text-sm mb-8">Insira o seu PIN para aceder ao terminal</p>
-      
+  <!-- Check-in Modal: "Quem está a operar?" - identifies who is acting as the till operator.
+       Opened on demand (sidebar operator box, Admin icon, or a locked action) rather than
+       blocking access to the dashboard. -->
+  <div id="mod-checkin" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="max-w-md w-full text-center relative c-card p-6 rounded-xl shadow-2xl">
+      <button onclick="closeCheckInModal()" class="absolute top-4 right-4 text-grey hover:text-white text-lg leading-none">✕</button>
+      <h2 id="checkin-title" class="text-2xl font-bold text-teal mb-2">Quem está a operar?</h2>
+      <p class="text-grey text-sm mb-8">Escolha o seu nome e insira o seu PIN</p>
+
       <!-- Staff Profiles List -->
       <div id="staff-profiles" class="grid grid-cols-2 gap-4 mb-8"></div>
 
@@ -116,7 +118,20 @@
         <button onclick="confirmPinLogin()" class="w-full bg-teal text-deep font-bold p-3 rounded-lg text-sm hover:opacity-90 active:scale-[0.98] transition">Confirmar (Enter)</button>
       </div>
 
-      <button onclick="signoutFirebase()" class="mt-8 text-xs text-grey hover:text-brandRed transition">Sair da Empresa</button>
+      <button onclick="signoutFirebase()" class="mt-4 text-xs text-grey hover:text-brandRed transition">Sair da Empresa</button>
+    </div>
+  </div>
+
+  <!-- Reason for closing a shift: handoff mid-day vs closing up for the day -->
+  <div id="mod-close-reason" class="hidden fixed inset-0 z-40 bg-deep/80 backdrop-blur-sm items-center justify-center p-4">
+    <div class="c-card p-6 rounded-xl max-w-sm w-full shadow-2xl space-y-4 text-center">
+      <div class="text-lg font-bold text-gold">Terminar Turno</div>
+      <p class="text-xs text-grey">Porque está a terminar o turno?</p>
+      <div class="space-y-2">
+        <button onclick="chooseCloseReason('shift')" class="w-full c-input p-3 rounded-lg text-sm font-semibold hover:border-teal transition">🔁 Fim de Turno <span class="block text-[10px] text-grey font-normal">Vou entregar a caixa a outro operador</span></button>
+        <button onclick="chooseCloseReason('day')" class="w-full c-input p-3 rounded-lg text-sm font-semibold hover:border-gold transition">🌙 Fim do Dia <span class="block text-[10px] text-grey font-normal">Encerramento do negócio hoje</span></button>
+      </div>
+      <button onclick="closeModal('mod-close-reason')" class="text-xs text-grey hover:text-white">Cancelar</button>
     </div>
   </div>
 
