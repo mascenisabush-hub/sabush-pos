@@ -335,7 +335,10 @@
         <section id="page-stock" class="page-view hidden space-y-4">
           <div class="flex justify-between items-center">
             <h1 class="text-xl font-bold text-teal">Gestão de Stock</h1>
-            <button onclick="openAddProductModal()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">+ Novo Produto</button>
+            <div class="flex gap-2">
+              <button onclick="openStockCountModal()" class="c-input font-bold px-4 py-2 rounded-lg text-sm hover:bg-light transition">Contagem de Stock</button>
+              <button onclick="openAddProductModal()" class="bg-teal text-deep font-bold px-4 py-2 rounded-lg text-sm hover:opacity-90 transition">+ Novo Produto</button>
+            </div>
           </div>
           <div id="stock-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
@@ -630,6 +633,31 @@
         <button onclick="closeModal('mod-receipt-print')" class="c-input p-2.5 rounded-lg text-xs font-bold hover:bg-light">Fechar</button>
         <button onclick="window.print()" class="bg-gold text-deep font-black p-2.5 rounded-lg text-xs hover:opacity-90">Imprimir</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: Physical Stock Count / Reconciliation -->
+  <div id="mod-stock-count" class="hidden fixed inset-0 z-40 bg-deep flex flex-col">
+    <div class="p-4 border-b border-light/50 flex justify-between items-center shrink-0">
+      <div>
+        <div class="text-lg font-bold text-teal">Contagem Física de Stock</div>
+        <div class="text-xs text-grey">Introduza a quantidade contada (unidade base) só para os produtos que contou. Deixe em branco os restantes.</div>
+      </div>
+      <button onclick="closeModal('mod-stock-count')" class="text-grey hover:text-white p-1 text-sm font-semibold">Fechar</button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4 space-y-2" id="stock-count-list"></div>
+    <div class="p-4 border-t border-light/50 shrink-0 space-y-2">
+      <div class="grid grid-cols-2 gap-2">
+        <div class="text-xs font-semibold bg-light/50 p-2.5 rounded-lg text-center">
+          <div class="text-grey">Produtos com Variância</div>
+          <div id="stock-count-summary-qty" class="text-base font-black">0</div>
+        </div>
+        <div class="text-xs font-semibold bg-light/50 p-2.5 rounded-lg text-center">
+          <div class="text-grey">Valor Estimado da Variância</div>
+          <div id="stock-count-summary-value" class="text-base font-black text-gold">0,00 MT</div>
+        </div>
+      </div>
+      <button onclick="confirmStockCount()" class="w-full bg-gold text-deep font-black p-3.5 rounded-lg text-sm hover:opacity-90">Confirmar Contagem & Ajustar Stock</button>
     </div>
   </div>
 
@@ -958,7 +986,7 @@
         { id: 3, name: "Frango Grelhado", category: "Alimentação", price: 450, qty: 30, unit: "dose", minStock: 5 },
         { id: 4, name: "Batata Frita", category: "Alimentação", price: 150, qty: 40, unit: "dose", minStock: 8 }
       ],
-      stockMovements: [], quebras: [], expenses: [],
+      stockMovements: [], quebras: [], expenses: [], stockCounts: [],
       tables: ["Mesa 1", "Mesa 2", "Mesa 3", "Mesa 4", "Mesa 5", "Balcão"],
       auditLog: [],
       shifts: [],
@@ -1196,10 +1224,11 @@
 
     // Offline-First Storage Controllers
     function loadLocalState() {
-      const keys = ["tabs", "history", "quickItems", "auth_users", "audit_log", "stock_products", "stock_movements", "quebras", "pos_expenses", "pos_tables", "resolved_debts", "shifts"];
+      const keys = ["tabs", "history", "quickItems", "auth_users", "audit_log", "stock_products", "stock_movements", "stock_counts", "quebras", "pos_expenses", "pos_tables", "resolved_debts", "shifts"];
       const mapping = {
         tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
         audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
+        stock_counts: "stockCounts",
         quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts",
         shifts: "shifts"
       };
@@ -1211,6 +1240,7 @@
         }
       });
       if (!Array.isArray(dbState.shifts)) dbState.shifts = [];
+      if (!Array.isArray(dbState.stockCounts)) dbState.stockCounts = [];
       // Load settings
       const settingsStr = localStorage.getItem("sabush_settings");
       if (settingsStr) {
@@ -1234,6 +1264,7 @@
       const mapping = {
         tabs: "tabs", history: "history", quickItems: "quickItems", auth_users: "staffList",
         audit_log: "auditLog", stock_products: "stockProducts", stock_movements: "stockMovements",
+        stock_counts: "stockCounts",
         quebras: "quebras", pos_expenses: "expenses", pos_tables: "tables", resolved_debts: "resolvedDebts",
         shifts: "shifts"
       };
@@ -1256,7 +1287,7 @@
     // item-by-item instead of overwriting wholesale when reconciling with the cloud.
     const MERGEABLE_ARRAY_FIELDS = [
       "tabs", "history", "resolvedDebts", "stockProducts", "stockMovements",
-      "quebras", "expenses", "auditLog", "shifts", "staffList"
+      "quebras", "expenses", "auditLog", "shifts", "staffList", "stockCounts"
     ];
     function mergeArraysById(localArr, cloudArr) {
       const local = Array.isArray(localArr) ? localArr : [];
@@ -2773,6 +2804,107 @@
       `).join('');
     }
 
+    // Physical Stock Count / Reconciliation
+    function openStockCountModal() {
+      if (!requireOperator()) return;
+      const list = document.getElementById("stock-count-list");
+      list.innerHTML = dbState.stockProducts.map(p => `
+        <div class="c-card p-3 rounded-lg flex items-center justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-sm truncate">${p.name}</div>
+            <div class="text-xs text-grey">Esperado: ${formatBreakdown(p)}</div>
+          </div>
+          <input type="number" id="count-input-${p.id}" placeholder="${p.qty}" oninput="updateStockCountRow(${p.id})" class="c-input w-24 p-2 rounded-lg text-sm text-right">
+          <div class="w-24 text-right text-xs font-bold" id="count-diff-${p.id}">—</div>
+        </div>
+      `).join('');
+      recalcStockCountSummary();
+      openModal("mod-stock-count");
+    }
+
+    function updateStockCountRow(id) {
+      const prod = dbState.stockProducts.find(p => p.id === id);
+      const input = document.getElementById(`count-input-${id}`);
+      const diffEl = document.getElementById(`count-diff-${id}`);
+      const val = parseFloat(input.value);
+      if (!prod || input.value === "" || isNaN(val)) {
+        diffEl.innerText = "—";
+        diffEl.className = "w-24 text-right text-xs font-bold text-grey";
+      } else {
+        const diff = val - prod.qty;
+        diffEl.innerText = (diff > 0 ? "+" : "") + diff + " " + prod.unit;
+        diffEl.className = "w-24 text-right text-xs font-bold " + (diff === 0 ? "text-grey" : diff > 0 ? "text-teal" : "text-brandRed");
+      }
+      recalcStockCountSummary();
+    }
+
+    // Reads every counted row (without mutating state) to preview how many
+    // products differ from expected and the estimated MT value of the gap.
+    function recalcStockCountSummary() {
+      let countMismatch = 0, valueVariance = 0;
+      dbState.stockProducts.forEach(p => {
+        const input = document.getElementById(`count-input-${p.id}`);
+        if (!input || input.value === "") return;
+        const val = parseFloat(input.value);
+        if (isNaN(val)) return;
+        const diff = val - p.qty;
+        if (diff !== 0) {
+          countMismatch++;
+          if (p.cost > 0) valueVariance += diff * p.cost;
+        }
+      });
+      document.getElementById("stock-count-summary-qty").innerText = countMismatch;
+      document.getElementById("stock-count-summary-value").innerText = fmtMoney(valueVariance);
+    }
+
+    function confirmStockCount() {
+      const entries = [];
+      dbState.stockProducts.forEach(p => {
+        const input = document.getElementById(`count-input-${p.id}`);
+        if (!input || input.value === "") return;
+        const val = parseFloat(input.value);
+        if (isNaN(val) || val < 0) return;
+        const diff = val - p.qty;
+        if (diff !== 0) {
+          entries.push({
+            prodId: p.id, prodName: p.name, unit: p.unit,
+            expected: p.qty, counted: val, diff,
+            value: p.cost > 0 ? diff * p.cost : null
+          });
+        }
+      });
+
+      if (entries.length === 0) {
+        closeModal("mod-stock-count");
+        return showToast("Nenhuma variância a registar — stock confirmado como esperado.");
+      }
+
+      updateState(() => {
+        entries.forEach(e => {
+          const prod = dbState.stockProducts.find(p => p.id === e.prodId);
+          if (!prod) return;
+          prod.qty = e.counted;
+          dbState.stockMovements.push({
+            id: "mov-" + Date.now() + "-" + e.prodId, timestamp: Date.now(),
+            prodId: e.prodId, prodName: e.prodName, qty: e.diff,
+            type: "adjustment",
+            reason: `Contagem física: ${e.diff > 0 ? '+' : ''}${e.diff} ${e.unit} (esperado ${e.expected}, contado ${e.counted})`
+          });
+        });
+        const totalValue = entries.reduce((sum, e) => sum + (e.value || 0), 0);
+        dbState.stockCounts.push({
+          id: "count-" + Date.now(), timestamp: Date.now(),
+          staffId: currentStaffUser ? currentStaffUser.id : null,
+          staffName: currentStaffUser ? currentStaffUser.name : "Sistema",
+          entries, totalValueVariance: totalValue
+        });
+        logAudit("Contagem de Stock", `Contagem física ajustou ${entries.length} produto(s), variância estimada de ${fmtMoney(totalValue)}`);
+      });
+
+      closeModal("mod-stock-count");
+      showToast(`Stock ajustado: ${entries.length} produto(s) com variância registada.`);
+    }
+
     let restockProductId = null;
     function restockProduct(id) {
       if (!requireOperator()) return;
@@ -3246,7 +3378,7 @@
         const wipedBy = currentStaffUser.name;
         updateState(() => {
           dbState.tabs = []; dbState.history = []; dbState.resolvedDebts = [];
-          dbState.stockProducts = []; dbState.stockMovements = [];
+          dbState.stockProducts = []; dbState.stockMovements = []; dbState.stockCounts = [];
           dbState.quebras = []; dbState.expenses = []; dbState.auditLog = [];
           dbState.shifts = [];
           dbState.staffList = [{ id: "gerente-1", name: "Gerente Geral", pinHash: "", pinSalt: "", role: "Manager", permissions: {} }];
