@@ -170,16 +170,16 @@
         </button>
       </nav>
       <div class="p-4 bg-card border-t border-light flex items-center justify-between">
-        <div class="flex items-center">
-          <div id="sidebar-staff-avatar" class="w-8 h-8 rounded-full bg-teal flex items-center justify-center text-deep font-bold mr-3">A</div>
-          <div>
-            <p id="sidebar-staff-name" class="text-xs font-bold text-white">---</p>
-            <p id="sidebar-staff-role" class="text-[10px] text-grey">---</p>
+        <button onclick="handleOperatorBoxClick()" class="flex items-center flex-1 min-w-0 text-left hover:opacity-80 transition" title="Tocar para iniciar/trocar sessão">
+          <div id="sidebar-staff-avatar" class="w-8 h-8 rounded-full bg-teal flex items-center justify-center text-deep font-bold mr-3 flex-shrink-0">?</div>
+          <div class="min-w-0">
+            <p id="sidebar-staff-name" class="text-xs font-bold text-white truncate">Sem operador</p>
+            <p id="sidebar-staff-role" class="text-[10px] text-grey truncate">Toque para iniciar sessão</p>
           </div>
-        </div>
+        </button>
         <div class="flex items-center gap-1">
-          <button onclick="lockStaffSession()" class="text-grey hover:bg-light p-2 rounded transition-colors" title="Bloquear Temporariamente (mantém o turno aberto)">🔒</button>
-          <button onclick="attemptEndSession()" class="text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Terminar Turno e Sair">🚪</button>
+          <button id="sidebar-lock-btn" onclick="lockStaffSession()" class="hidden text-grey hover:bg-light p-2 rounded transition-colors" title="Bloquear Temporariamente (mantém o turno aberto)">🔒</button>
+          <button id="sidebar-end-btn" onclick="attemptEndSession()" class="hidden text-brandRed hover:bg-brandRed/10 p-2 rounded transition-colors" title="Terminar Turno e Sair">🚪</button>
         </div>
       </div>
     </aside>
@@ -208,6 +208,9 @@
             <p class="text-[10px] text-grey uppercase font-bold tracking-wider">Vendas do Dia</p>
             <p id="header-revenue" class="text-base md:text-lg font-bold text-gold">0,00 MT</p>
           </div>
+          <button onclick="openAdminPanel()" class="bg-card text-gold hover:bg-gold/10 border border-light px-3 py-1.5 rounded-lg text-xs font-semibold transition" title="Painel de Administração (Gerente)">
+            🛡️
+          </button>
           <button onclick="toggleTheme()" class="bg-card text-grey hover:text-white border border-light px-3 py-1.5 rounded-lg text-xs font-semibold transition animate-fade-in" title="Alternar Tema">
             🌓
           </button>
@@ -240,10 +243,10 @@
         <button id="mobile-nav-settings" onclick="switchPage('settings')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>⚙️</span><span>Definições</span>
         </button>
-        <button onclick="lockStaffSession()" class="text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
+        <button id="mobile-lock-btn" onclick="lockStaffSession()" class="hidden text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>🔒</span><span>Bloquear</span>
         </button>
-        <button onclick="attemptEndSession()" class="text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
+        <button id="mobile-end-btn" onclick="attemptEndSession()" class="hidden text-xs px-3 py-2 text-brandRed font-semibold flex flex-col items-center gap-1">
           <span>🚪</span><span>Terminar</span>
         </button>
       </nav>
@@ -1004,21 +1007,21 @@
           if (dbState.settings.syncEnabled) {
             setupRealtimeSync();
           }
-          // First-time / single-manager access: if there's only one staff profile and
-          // no PIN has been configured for them yet, log straight into the dashboard.
-          // The manager can set a PIN for themselves (and add staff) later in Settings.
-          if (dbState.staffList.length === 1 && !dbState.staffList[0].pinHash) {
-            document.getElementById("scr-staff").classList.add("hidden");
-            loginAsStaff(dbState.staffList[0]);
-          } else {
-            renderStaffProfiles();
-            document.getElementById("scr-staff").classList.remove("hidden");
-          }
+          // Always land straight on the shared dashboard. Nobody is "checked in" as an
+          // operator yet - currentStaffUser stays null until someone taps the operator
+          // box (or a locked action) and enters their PIN.
+          currentStaffUser = null;
+          currentShift = null;
+          document.getElementById("mod-checkin").classList.add("hidden");
+          document.getElementById("scr-main").classList.remove("hidden");
+          resetActivityTimer();
+          switchPage("tabs");
+          renderUI();
         } else {
           currentBusinessUser = null;
           currentStaffUser = null;
           document.getElementById("scr-main").classList.add("hidden");
-          document.getElementById("scr-staff").classList.add("hidden");
+          document.getElementById("mod-checkin").classList.add("hidden");
           document.getElementById("scr-auth").classList.remove("hidden");
         }
       });
