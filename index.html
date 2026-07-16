@@ -1842,11 +1842,12 @@
         const addItems = (list) => {
           if (!list) return;
           list.forEach(item => {
-            const existing = itemMap.get(item.name);
+            const key = `${item.name}|${item.unit || 'un'}`;
+            const existing = itemMap.get(key);
             if (existing) {
               existing.qty += item.qty;
             } else {
-              itemMap.set(item.name, { name: item.name, qty: item.qty, price: item.price });
+              itemMap.set(key, { name: item.name, qty: item.qty, price: item.price, unit: item.unit });
             }
           });
         };
@@ -1961,24 +1962,41 @@
 
     function renderDetailQuickChips() {
       const container = document.getElementById("detail-quick-chips");
-      container.innerHTML = dbState.quickItems.map(item => `
-        <button onclick="addQuickItemToCurrentRound('${item.name}', ${item.price})" class="bg-light px-3 py-1.5 rounded-full text-xs hover:bg-teal hover:text-deep font-semibold transition">
-          ${item.name} — ${item.price} MT
-        </button>
-      `).join('');
+      container.innerHTML = dbState.quickItems.map(item => {
+        const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
+        const extraUnits = prod ? getProductUnits(prod).filter(u => u.factor > 1) : [];
+        // Primary button always sells in the base unit (un/kg/etc.) — unchanged behavior.
+        const primary = `
+          <button onclick="addQuickItemToCurrentRound('${item.name}', ${item.price}, '${prod ? prod.unit : 'un'}', 1)" class="bg-light px-3 py-1.5 rounded-full text-xs hover:bg-teal hover:text-deep font-semibold transition">
+            ${item.name} — ${item.price} MT
+          </button>`;
+        // Secondary, smaller chips let the cashier optionally sell in a larger
+        // unit (cx, emb...) — only shown when the product actually defines them.
+        const secondary = extraUnits.map(u => `
+          <button onclick="addQuickItemToCurrentRound('${item.name}', ${item.price * u.factor}, '${u.name}', ${u.factor})" class="bg-light/40 border border-light px-2 py-0.5 rounded-full text-[10px] text-grey hover:bg-gold/20 hover:text-gold hover:border-gold transition">
+            +${u.name} (${item.price * u.factor} MT)
+          </button>`).join('');
+        return `<div class="flex flex-col items-start gap-1">${primary}${secondary ? `<div class="flex flex-wrap gap-1 pl-1">${secondary}</div>` : ''}</div>`;
+      }).join('');
     }
 
-    function addQuickItemToCurrentRound(name, price) {
+    function addQuickItemToCurrentRound(name, price, unitName, factor) {
+      unitName = unitName || "un";
+      factor = factor || 1;
       // Check stock
       const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === name.toLowerCase());
       if (prod && prod.qty <= 0) {
         showToast(`Stock Zero: ${name} está esgotado!`, "warning");
+      } else if (prod && prod.qty < factor) {
+        showToast(`Atenção: stock de ${name} pode não cobrir 1 ${unitName} (${formatBreakdown(prod)} disponível)`, "warning");
       }
-      
+
       updateState(() => {
-        const item = currentDetailTab.currentRound.find(i => i.name === name);
+        // Same product sold in different units are kept as separate lines
+        // (selling 1 cx is not the same line item as selling 1 un).
+        const item = currentDetailTab.currentRound.find(i => i.name === name && i.unit === unitName);
         if (item) item.qty++;
-        else currentDetailTab.currentRound.push({ id: Date.now(), name, price, qty: 1 });
+        else currentDetailTab.currentRound.push({ id: Date.now(), name, price, qty: 1, unit: unitName, factor });
       });
       renderCurrentRound();
       recalcTabCheckout();
@@ -1992,7 +2010,7 @@
       }
       container.innerHTML = currentDetailTab.currentRound.map(i => `
         <div class="flex justify-between items-center p-2 bg-light/30 rounded-lg">
-          <div><span class="font-bold">${i.name}</span> <span class="text-xs text-grey">x${i.qty}</span></div>
+          <div><span class="font-bold">${i.name}</span> <span class="text-xs text-grey">x${i.qty}${i.factor > 1 ? ` ${i.unit}` : ''}</span></div>
           <div class="flex items-center gap-3">
             <span class="font-bold text-gold">${fmtMoney(i.price * i.qty)}</span>
             <button onclick="adjustCurrentRoundQty(${i.id}, -1)" class="w-6 h-6 rounded bg-light hover:bg-brandRed transition">-</button>
@@ -2242,11 +2260,12 @@
           round.forEach(item => {
             const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
             if (prod) {
-              prod.qty -= item.qty;
+              const baseQty = item.qty * (item.factor || 1);
+              prod.qty -= baseQty;
               dbState.stockMovements.push({
                 id: "mov-" + Date.now(), timestamp: Date.now(),
-                prodId: prod.id, prodName: prod.name, qty: -item.qty,
-                type: "out", reason: "Venda na Conta " + currentDetailTab.name
+                prodId: prod.id, prodName: prod.name, qty: -baseQty,
+                type: "out", reason: `Venda na Conta ${currentDetailTab.name} (${item.qty} ${item.unit || prod.unit})`
               });
               if (prod.qty <= prod.minStock) {
                 showToast(`Alerta: ${prod.name} com stock crítico (${formatBreakdown(prod)})`, "warning");
