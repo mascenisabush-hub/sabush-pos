@@ -400,7 +400,7 @@
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="c-card p-5 rounded-xl space-y-4">
+            <div id="settings-team-card" class="c-card p-5 rounded-xl space-y-4">
               <h2 class="font-bold text-sm text-gold">Gestão de Equipa (PINs)</h2>
               <div id="staff-settings-list" class="space-y-2"></div>
               <button onclick="openAddStaffModal()" class="w-full bg-[#142035] border border-[#00C9B1] text-[#00C9B1] text-sm font-semibold p-2 rounded-lg hover:bg-[#00C9B1] hover:text-[#0B1628] transition">Adicionar Funcionário</button>
@@ -421,7 +421,9 @@
                 <div><div class="text-sm font-semibold">Sincronização em Nuvem</div><div class="text-xs text-grey">Sincronizar em tempo real com Firestore</div></div>
                 <input type="checkbox" id="setting-sync-toggle" onchange="toggleSyncEnabled(this.checked)" class="w-5 h-5 accent-teal" checked>
               </div>
-              <button onclick="confirmWipeData()" class="w-full bg-brandRed/20 border border-brandRed text-brandRed text-sm font-semibold p-2.5 rounded-lg hover:bg-brandRed hover:text-white transition">Wipe/Limpar Toda Informação</button>
+              <div id="settings-danger-card">
+                <button onclick="confirmWipeData()" class="w-full bg-brandRed/20 border border-brandRed text-brandRed text-sm font-semibold p-2.5 rounded-lg hover:bg-brandRed hover:text-white transition">Wipe/Limpar Toda Informação</button>
+              </div>
             </div>
           </div>
         </section>
@@ -1265,13 +1267,14 @@
     // Staff picker login
     function renderStaffProfiles() {
       const container = document.getElementById("staff-profiles");
-      container.innerHTML = dbState.staffList.map(s => `
+      const list = checkinManagersOnly ? dbState.staffList.filter(s => s.role === "Manager") : dbState.staffList;
+      container.innerHTML = list.map(s => `
         <button onclick="selectStaffForLogin('${s.id}')" class="c-card p-4 rounded-xl flex flex-col items-center hover:border-teal transition">
           <div class="w-12 h-12 rounded-full bg-teal/20 text-teal flex items-center justify-center font-bold text-lg mb-2">${s.name.charAt(0)}</div>
           <div class="font-bold text-sm text-white">${s.name}</div>
           <div class="text-xs text-grey">${s.role === "Manager" ? "Gerente" : "Caixa"}</div>
         </button>
-      `).join('');
+      `).join('') || '<div class="col-span-2 text-xs text-grey">Nenhum gerente configurado.</div>';
     }
 
     function selectStaffForLogin(id) {
@@ -1309,10 +1312,67 @@
       }
     }
 
+    // Opens the check-in ("Quem está a operar?") modal. managersOnly restricts the
+    // profile list to Manager accounts - used by the Admin panel shortcut.
+    let checkinManagersOnly = false;
+    let pendingAdminAccess = false;
+    function openCheckIn(managersOnly) {
+      checkinManagersOnly = !!managersOnly;
+      document.getElementById("checkin-title").innerText = checkinManagersOnly ? "Acesso de Gerente" : "Quem está a operar?";
+      renderStaffProfiles();
+      document.getElementById("pin-pad-container").classList.add("hidden");
+      document.getElementById("staff-profiles").classList.remove("hidden");
+      openModal("mod-checkin");
+    }
+    function closeCheckInModal() {
+      pendingAdminAccess = false;
+      closeModal("mod-checkin");
+    }
+
+    // Sidebar/mobile operator box: opens check-in if nobody's checked in yet, or lets
+    // someone hand off / switch operator otherwise.
+    function handleOperatorBoxClick() {
+      openCheckIn(false);
+    }
+
+    // Call at the top of any action that mutates data (opening/closing a conta, adding
+    // stock, recording an expense, etc.) - "no operation can be done outside a caixa".
+    // Returns true if there's an operator checked in; otherwise opens check-in and
+    // returns false so the caller can abort.
+    function requireOperator() {
+      if (currentStaffUser) return true;
+      showToast("Inicie sessão com o seu PIN para continuar", "warning");
+      openCheckIn(false);
+      return false;
+    }
+
+    // Admin panel shortcut (🛡️ icon): a checked-in Manager jumps straight to team
+    // management; anyone else must authenticate with a Manager PIN first.
+    function openAdminPanel() {
+      if (currentStaffUser && currentStaffUser.role === "Manager") {
+        switchPage("settings");
+        return;
+      }
+      pendingAdminAccess = true;
+      openCheckIn(true);
+    }
+
     function loginAsStaff(staff) {
       currentStaffUser = staff;
       document.getElementById("pin-pad-container").classList.add("hidden");
       logAudit(staff.pinHash ? "PIN login" : "Acesso direto", `Login efetuado por ${currentStaffUser.name}`);
+
+      // Admin-panel shortcut: authenticate as manager but don't force a till shift -
+      // they're here to manage the team, not necessarily operate the register.
+      if (pendingAdminAccess) {
+        closeModal("mod-checkin");
+        resetActivityTimer();
+        switchPage("settings");
+        renderUI();
+        showToast(`Painel de Administração — ${currentStaffUser.name}`);
+        pendingAdminAccess = false;
+        return;
+      }
 
       const openShift = dbState.shifts.find(s => s.staffId === staff.id && s.status === "open");
       if (openShift) {
@@ -1343,6 +1403,7 @@
           openingBalance: val,
           closedAt: null,
           closingBalance: null,
+          closeReason: null,
           cashSales: 0,
           expectedCash: null,
           difference: null,
@@ -1357,36 +1418,40 @@
     }
 
     function enterMainApp() {
-      document.getElementById("scr-staff").classList.add("hidden");
-      document.getElementById("scr-main").classList.remove("hidden");
+      closeModal("mod-checkin");
       resetActivityTimer();
       switchPage("tabs");
       renderUI();
       showToast(`Sessão aberta como ${currentStaffUser.name}`);
     }
 
-    // Quick lock: used for inactivity auto-lock. Does NOT close the shift -
-    // staff simply re-enters their PIN to resume where they left off.
+    // Quick lock: used for inactivity auto-lock, or tapping 🔒. Does NOT close the
+    // shift - staff re-enters their PIN to resume where they left off. The dashboard
+    // stays visible throughout; it just has nobody checked in for a moment.
     function lockStaffSession() {
       currentStaffUser = null;
-      document.getElementById("scr-main").classList.add("hidden");
-      document.getElementById("scr-staff").classList.remove("hidden");
-      document.getElementById("pin-pad-container").classList.add("hidden");
-      document.getElementById("staff-profiles").classList.remove("hidden");
-      renderStaffProfiles();
+      switchPage("tabs");
+      renderUI();
+      closeModal("mod-checkin");
     }
 
     // Deliberate "leave terminal" action (door icon / back button on the home page).
-    // If the staff member has an open shift, they must count and confirm their
-    // closing cash balance first so the system can calculate their sales.
+    // If the staff member has an open shift, they choose a reason and then count/confirm
+    // their closing cash balance so the system can calculate their sales.
     function attemptEndSession() {
       if (currentShift && currentShift.status === "open") {
-        const confirmed = confirm("Tem a certeza que deseja terminar o turno agora?\n\nTerá de contar e confirmar o dinheiro na caixa. Se só vai sair por breves momentos, use o botão 🔒 Bloquear Temporariamente em vez disto.");
-        if (!confirmed) return;
-        promptCloseShift();
+        openModal("mod-close-reason");
       } else {
         lockStaffSession();
       }
+    }
+
+    // Fim de Turno vs Fim do Dia, chosen in mod-close-reason before promptCloseShift().
+    let pendingCloseReason = null;
+    function chooseCloseReason(reason) {
+      pendingCloseReason = reason;
+      closeModal("mod-close-reason");
+      promptCloseShift();
     }
 
     function getCashSalesForShift(shift) {
@@ -1465,6 +1530,7 @@
         const cashDebts = getCashDebtsForShift(currentShift);
         const expected = currentShift.openingBalance + cashSales + cashDebts;
         const difference = Math.round((val - expected) * 100) / 100;
+        const reason = pendingCloseReason || "shift";
 
         updateState(() => {
           currentShift.closedAt = Date.now();
@@ -1474,7 +1540,8 @@
           currentShift.expectedCash = expected;
           currentShift.difference = difference;
           currentShift.status = "closed";
-          logAudit("Fecho de Turno", `${currentShift.staffName} fechou turno. Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}${pinReconfirmed ? " (PIN confirmado)" : ""}`);
+          currentShift.closeReason = reason;
+          logAudit(reason === "day" ? "Fecho de Dia" : "Fecho de Turno", `${currentShift.staffName} fechou turno (${reason === "day" ? "Fim do Dia" : "Fim de Turno"}). Vendas em dinheiro: ${fmtMoney(cashSales)}. Dívidas cobradas em dinheiro: ${fmtMoney(cashDebts)}. Diferença: ${fmtMoney(difference)}${pinReconfirmed ? " (PIN confirmado)" : ""}`);
         });
 
         const diffMsg = difference === 0 ? "Caixa certa!" : (difference > 0 ? `Sobra de ${fmtMoney(difference)}` : `Falta de ${fmtMoney(Math.abs(difference))}`);
@@ -1483,6 +1550,13 @@
         closeModal("mod-close-shift");
         currentShift = null;
         lockStaffSession();
+
+        // "Fim do Dia" means the business is closing up for the day - bring up the
+        // end-of-day summary automatically so it doesn't get forgotten.
+        if (reason === "day") {
+          setTimeout(() => openEodModal(), 300);
+        }
+        pendingCloseReason = null;
       });
     }
 
@@ -1519,16 +1593,18 @@
 
     // Page Router
     function switchPage(pageId) {
-      if (!currentStaffUser) return;
-      
-      // Permissions gating checks
-      if (currentStaffUser.role === "Cashier") {
+      if (!currentStaffUser && pageId !== "tabs") {
+        openCheckIn(false);
+        return;
+      }
+
+      // Permissions gating checks (authorized per cashier by the admin)
+      if (currentStaffUser && currentStaffUser.role === "Cashier") {
         if (pageId === "history" && !currentStaffUser.permissions.view_history) return showToast("Acesso negado", "error");
         if (pageId === "stock" && !currentStaffUser.permissions.view_stock) return showToast("Acesso negado", "error");
         if (pageId === "expenses" && !currentStaffUser.permissions.view_expenses) return showToast("Acesso negado", "error");
       }
-      if (pageId === "shifts" && currentStaffUser.role !== "Manager") return showToast("Acesso negado — apenas gerentes", "error");
-      if (pageId === "settings" && currentStaffUser.role !== "Manager") return showToast("Acesso negado — apenas o gerente pode abrir Configurações", "error");
+      if (pageId === "shifts" && (!currentStaffUser || currentStaffUser.role !== "Manager")) return showToast("Acesso negado — apenas gerentes", "error");
 
       activePage = pageId;
       document.querySelectorAll(".page-view").forEach(el => el.classList.add("hidden"));
@@ -1587,8 +1663,8 @@
       updateRoleBasedUI();
     }
 
-    // Manager-only nav items must be re-applied after every render, since switchPage()
-    // rewrites each nav button's className wholesale (which would otherwise reveal them).
+    // Manager-only nav items / sections must be re-applied after every render, since
+    // switchPage() rewrites each nav button's className wholesale.
     function updateRoleBasedUI() {
       const isManager = !!(currentStaffUser && currentStaffUser.role === "Manager");
       const desktopBtn = document.getElementById("nav-btn-shifts");
@@ -1596,10 +1672,23 @@
       if (desktopBtn) desktopBtn.classList.toggle("hidden", !isManager);
       if (mobileBtn) mobileBtn.classList.toggle("hidden", !isManager);
 
-      const settingsDesktopBtn = document.getElementById("nav-btn-settings");
-      const settingsMobileBtn = document.getElementById("mobile-nav-settings");
-      if (settingsDesktopBtn) settingsDesktopBtn.classList.toggle("hidden", !isManager);
-      if (settingsMobileBtn) settingsMobileBtn.classList.toggle("hidden", !isManager);
+      // Settings itself is reachable by any checked-in operator (dashboard is common) -
+      // only the sensitive team-management and data-wipe sections inside it are
+      // Manager-gated.
+      const teamCard = document.getElementById("settings-team-card");
+      const dangerCard = document.getElementById("settings-danger-card");
+      if (teamCard) teamCard.classList.toggle("hidden", !isManager);
+      if (dangerCard) dangerCard.classList.toggle("hidden", !isManager);
+
+      // Lock/end-session icons only make sense once someone is actually checked in.
+      const lockBtnDesktop = document.getElementById("sidebar-lock-btn");
+      const endBtnDesktop = document.getElementById("sidebar-end-btn");
+      const lockBtnMobile = document.getElementById("mobile-lock-btn");
+      const endBtnMobile = document.getElementById("mobile-end-btn");
+      if (lockBtnDesktop) lockBtnDesktop.classList.toggle("hidden", !currentStaffUser);
+      if (endBtnDesktop) endBtnDesktop.classList.toggle("hidden", !currentStaffUser);
+      if (lockBtnMobile) lockBtnMobile.classList.toggle("hidden", !currentStaffUser);
+      if (endBtnMobile) endBtnMobile.classList.toggle("hidden", !currentStaffUser);
     }
 
     // Business Profile helpers
@@ -1627,17 +1716,18 @@
       const elRev = document.getElementById("header-revenue");
       if (elRev) elRev.innerText = fmtMoney(sumPaid);
 
-      // Active user info
+      // Active user info - reflects "no operator checked in" as its own state
+      const elStaffName = document.getElementById("sidebar-staff-name");
+      const elStaffRole = document.getElementById("sidebar-staff-role");
+      const elStaffAvatar = document.getElementById("sidebar-staff-avatar");
       if (currentStaffUser) {
-        const elStaffName = document.getElementById("sidebar-staff-name");
-        const elStaffRole = document.getElementById("sidebar-staff-role");
-        const elStaffAvatar = document.getElementById("sidebar-staff-avatar");
-
         if (elStaffName) elStaffName.innerText = currentStaffUser.name;
         if (elStaffRole) elStaffRole.innerText = currentStaffUser.role === "Manager" ? "Gerente" : "Operador de Caixa";
-        if (elStaffAvatar) {
-          elStaffAvatar.innerText = currentStaffUser.name.charAt(0).toUpperCase();
-        }
+        if (elStaffAvatar) elStaffAvatar.innerText = currentStaffUser.name.charAt(0).toUpperCase();
+      } else {
+        if (elStaffName) elStaffName.innerText = "Sem operador";
+        if (elStaffRole) elStaffRole.innerText = "Toque para iniciar sessão";
+        if (elStaffAvatar) elStaffAvatar.innerText = "?";
       }
     }
 
@@ -1670,6 +1760,7 @@
 
     // Tab management (Contas)
     function openCreateTabModal() {
+      if (!requireOperator()) return;
       document.getElementById("new-tab-name").value = "";
       document.getElementById("new-tab-note").value = "";
       activeCreateTabTable = "";
@@ -2231,6 +2322,7 @@
 
     let debtIdForResolve = null;
     function openResolveDebtModal(id) {
+      if (!requireOperator()) return;
       const h = dbState.history.find(entry => entry.id === id);
       if (!h) return;
       const unpaid = h.total - h.paid;
@@ -2399,6 +2491,7 @@
 
     let restockProductId = null;
     function restockProduct(id) {
+      if (!requireOperator()) return;
       const prod = dbState.stockProducts.find(p => p.id === id);
       if (!prod) return;
       restockProductId = id;
@@ -2498,6 +2591,7 @@
     }
 
     function openAddQuebraModal() {
+      if (!requireOperator()) return;
       document.getElementById("quebra-item").value = "";
       document.getElementById("quebra-qty").value = "1";
       document.getElementById("quebra-cost").value = "";
@@ -2538,6 +2632,7 @@
     }
 
     function openAddExpenseModal() {
+      if (!requireOperator()) return;
       document.getElementById("exp-desc").value = "";
       document.getElementById("exp-amount").value = "";
       openModal("mod-expense");
