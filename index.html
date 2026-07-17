@@ -316,6 +316,24 @@
             </div>
           </div>
 
+          <!-- Desempenho por Produto: quantity sold, revenue, cost and margin per catalog item -->
+          <div class="flex justify-between items-center pt-2">
+            <h2 class="text-sm font-bold text-gold uppercase tracking-wider">Desempenho por Produto</h2>
+            <select id="product-perf-sort" onchange="renderProductPerformance()" class="c-input p-2 rounded-lg text-xs">
+              <option value="revenue">Ordenar: Receita</option>
+              <option value="qty">Ordenar: Quantidade</option>
+              <option value="margin">Ordenar: Margem</option>
+            </select>
+          </div>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider"><th class="p-3">Produto</th><th class="p-3">Qtd Vendida</th><th class="p-3">Receita</th><th class="p-3">Custo</th><th class="p-3">Margem</th><th class="p-3">Margem %</th></tr></thead>
+                <tbody id="product-performance-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Dívidas Cobradas: every debt payment is recorded here with who collected it, when, and by which method -->
           <div class="flex justify-between items-center pt-2">
             <h2 class="text-sm font-bold text-gold uppercase tracking-wider">Dívidas Cobradas (Fiado)</h2>
@@ -2402,9 +2420,11 @@
         // Process stock deduction + track cost of goods sold (COGS) for margin reporting
         let cogs = 0;
         let hasCostData = false;
+        const soldItems = [];
         currentDetailTab.rounds.forEach(round => {
           round.forEach(item => {
             const prod = dbState.stockProducts.find(p => p.name.toLowerCase() === item.name.toLowerCase());
+            let itemCost = null;
             if (prod) {
               const baseQty = item.qty * (item.factor || 1);
               prod.qty -= baseQty;
@@ -2415,7 +2435,7 @@
               }
               // Snapshot the product's average cost at time of sale so later
               // cost changes don't retroactively rewrite past margins.
-              if (prod.cost > 0) { cogs += baseQty * prod.cost; hasCostData = true; }
+              if (prod.cost > 0) { cogs += baseQty * prod.cost; hasCostData = true; itemCost = prod.cost; }
               dbState.stockMovements.push({
                 id: "mov-" + Date.now(), timestamp: Date.now(),
                 prodId: prod.id, prodName: prod.name, qty: -baseQty,
@@ -2425,6 +2445,7 @@
                 showToast(`Alerta: ${prod.name} com stock crítico (${formatBreakdown(prod)})`, "warning");
               }
             }
+            soldItems.push({ name: item.name, qty: item.qty, price: item.price, baseQty: prod ? item.qty * (item.factor || 1) : item.qty, unitCost: itemCost });
           });
         });
 
@@ -2442,7 +2463,7 @@
           debtor,
           reason,
           payments: [...detailTabPayments],
-          items: currentDetailTab.rounds.flatMap(r => r.map(i => ({ name: i.name, qty: i.qty, price: i.price }))),
+          items: soldItems,
           // cost/profit are approximate: cost is computed on pre-discount item
           // prices, so a manual discount slightly reduces real margin below
           // this figure. Only set when at least one item had a cost price defined.
@@ -2548,6 +2569,64 @@
       }).join('');
 
       renderResolvedDebts();
+      renderProductPerformance();
+    }
+
+    // Aggregates every sold item across all-time history into per-product totals:
+    // quantity sold, revenue, cost (where known), and margin — for spotting best
+    // and worst sellers. Catalog products with zero sales are included at the
+    // bottom (muted) so slow movers are visible too, not just missing.
+    function renderProductPerformance() {
+      const tbody = document.getElementById("product-performance-table-body");
+      if (!tbody) return;
+      const stats = {};
+      dbState.stockProducts.forEach(p => {
+        stats[p.name] = { name: p.name, qty: 0, revenue: 0, cost: 0, hasCost: false };
+      });
+      dbState.history.forEach(h => {
+        (h.items || []).forEach(item => {
+          if (!stats[item.name]) stats[item.name] = { name: item.name, qty: 0, revenue: 0, cost: 0, hasCost: false };
+          const s = stats[item.name];
+          s.qty += item.qty;
+          s.revenue += item.price * item.qty;
+          if (item.unitCost != null) {
+            s.cost += (item.baseQty != null ? item.baseQty : item.qty) * item.unitCost;
+            s.hasCost = true;
+          }
+        });
+      });
+
+      let rows = Object.values(stats);
+      const sortBy = document.getElementById("product-perf-sort") ? document.getElementById("product-perf-sort").value : "revenue";
+      if (sortBy === "qty") rows.sort((a, b) => b.qty - a.qty);
+      else if (sortBy === "margin") rows.sort((a, b) => (b.revenue - b.cost) - (a.revenue - a.cost));
+      else rows.sort((a, b) => b.revenue - a.revenue);
+
+      const soldRows = rows.filter(r => r.qty > 0);
+      const topQtyName = soldRows.length ? [...soldRows].sort((a, b) => b.qty - a.qty)[0].name : null;
+      const worstQtyName = soldRows.length > 1 ? [...soldRows].sort((a, b) => a.qty - b.qty)[0].name : null;
+
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Sem produtos catalogados ainda.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map(r => {
+        const margin = r.revenue - r.cost;
+        const marginPct = r.revenue > 0 && r.hasCost ? (margin / r.revenue) * 100 : null;
+        const badge = r.name === topQtyName ? '🏆 ' : (r.name === worstQtyName ? '🐌 ' : '');
+        const muted = r.qty === 0 ? 'opacity-50' : '';
+        return `
+        <tr class="border-b border-light/50 hover:bg-light/20 transition ${muted}">
+          <td class="p-3 font-semibold">${badge}${r.name}</td>
+          <td class="p-3">${r.qty}</td>
+          <td class="p-3 font-bold">${fmtMoney(r.revenue)}</td>
+          <td class="p-3 text-grey">${r.hasCost ? fmtMoney(r.cost) : '—'}</td>
+          <td class="p-3 ${r.hasCost ? (margin >= 0 ? 'text-gold font-semibold' : 'text-brandRed font-semibold') : 'text-grey'}">${r.hasCost ? fmtMoney(margin) : '—'}</td>
+          <td class="p-3 ${r.hasCost ? (marginPct >= 0 ? 'text-gold' : 'text-brandRed') : 'text-grey'}">${marginPct != null ? marginPct.toFixed(0) + '%' : '—'}</td>
+        </tr>
+      `;
+      }).join('');
     }
 
     function renderResolvedDebts() {
