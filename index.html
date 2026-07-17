@@ -430,6 +430,34 @@
               </table>
             </div>
           </div>
+
+          <!-- Desempenho por Funcionário: aggregated across every shift worked -->
+          <h2 class="text-sm font-bold text-gold uppercase tracking-wider pt-2">Desempenho por Funcionário</h2>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider">
+                  <th class="p-3">Funcionário</th><th class="p-3">Turnos</th><th class="p-3">Vendas</th>
+                  <th class="p-3">Receita Total</th><th class="p-3">Venda Média</th><th class="p-3">Lucro Gerado</th>
+                </tr></thead>
+                <tbody id="staff-performance-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Histórico de Turnos: individual closed shifts, for reviewing a specific day/operator -->
+          <h2 class="text-sm font-bold text-gold uppercase tracking-wider pt-2">Histórico de Turnos</h2>
+          <div class="c-card rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-sm">
+                <thead><tr class="bg-card border-b border-light text-grey text-xs uppercase font-bold tracking-wider">
+                  <th class="p-3">Funcionário</th><th class="p-3">Início</th><th class="p-3">Fim</th>
+                  <th class="p-3">Vendas</th><th class="p-3">Receita</th><th class="p-3">Diferença de Caixa</th>
+                </tr></thead>
+                <tbody id="closed-shifts-table-body"></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <!-- Page: Settings -->
@@ -1665,21 +1693,95 @@
 
       if (openShifts.length === 0) {
         tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Nenhum turno ativo neste momento.</td></tr>`;
-        return;
+      } else {
+        tbody.innerHTML = openShifts.map(s => {
+          const cashSales = getCashSalesForShift(s);
+          const cashDebts = getCashDebtsForShift(s);
+          const expected = s.openingBalance + cashSales + cashDebts;
+          return `
+            <tr class="border-b border-light/50 hover:bg-light/20 transition">
+              <td class="p-3 font-semibold">${s.staffName}</td>
+              <td class="p-3 text-grey">${fmtDate(s.openedAt)}</td>
+              <td class="p-3">${fmtMoney(s.openingBalance)}</td>
+              <td class="p-3 text-teal">${fmtMoney(cashSales)}</td>
+              <td class="p-3 text-gold">${fmtMoney(cashDebts)}</td>
+              <td class="p-3 font-bold">${fmtMoney(expected)}</td>
+            </tr>
+          `;
+        }).join('');
       }
 
-      tbody.innerHTML = openShifts.map(s => {
-        const cashSales = getCashSalesForShift(s);
-        const cashDebts = getCashDebtsForShift(s);
-        const expected = s.openingBalance + cashSales + cashDebts;
+      renderStaffPerformance();
+      renderClosedShiftsLog();
+    }
+
+    // All sales made by a given shift's operator while that shift was open
+    // (or, for a still-open shift, up to now). Uses total sale value (h.total)
+    // rather than just cash collected, so it reflects actual sales performance
+    // regardless of payment method or outstanding debt.
+    function getShiftSalesStats(shift) {
+      const end = shift.closedAt || Date.now();
+      let count = 0, revenue = 0, profit = 0, hasProfit = false;
+      dbState.history.forEach(h => {
+        if (h.staffId === shift.staffId && h.timestamp >= shift.openedAt && h.timestamp <= end) {
+          count++;
+          revenue += h.total;
+          if (h.profit != null) { profit += h.profit; hasProfit = true; }
+        }
+      });
+      return { count, revenue, profit, hasProfit };
+    }
+
+    function renderStaffPerformance() {
+      const tbody = document.getElementById("staff-performance-table-body");
+      if (!tbody) return;
+      const byStaff = {};
+      dbState.shifts.forEach(shift => {
+        const stats = getShiftSalesStats(shift);
+        if (!byStaff[shift.staffId]) byStaff[shift.staffId] = { name: shift.staffName, shifts: 0, count: 0, revenue: 0, profit: 0, hasProfit: false };
+        const s = byStaff[shift.staffId];
+        s.shifts++;
+        s.count += stats.count;
+        s.revenue += stats.revenue;
+        if (stats.hasProfit) { s.profit += stats.profit; s.hasProfit = true; }
+      });
+
+      const rows = Object.values(byStaff).sort((a, b) => b.revenue - a.revenue);
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Sem turnos registados ainda.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(s => `
+        <tr class="border-b border-light/50 hover:bg-light/20 transition">
+          <td class="p-3 font-semibold">${s.name}</td>
+          <td class="p-3">${s.shifts}</td>
+          <td class="p-3">${s.count}</td>
+          <td class="p-3 font-bold">${fmtMoney(s.revenue)}</td>
+          <td class="p-3 text-grey">${s.count > 0 ? fmtMoney(s.revenue / s.count) : '—'}</td>
+          <td class="p-3 ${s.hasProfit ? 'text-gold font-semibold' : 'text-grey'}">${s.hasProfit ? fmtMoney(s.profit) : '—'}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderClosedShiftsLog() {
+      const tbody = document.getElementById("closed-shifts-table-body");
+      if (!tbody) return;
+      const closed = [...dbState.shifts].filter(s => s.status === "closed").sort((a, b) => b.closedAt - a.closedAt);
+      if (closed.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-grey text-xs">Nenhum turno fechado ainda.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = closed.map(shift => {
+        const stats = getShiftSalesStats(shift);
+        const diff = shift.difference || 0;
         return `
           <tr class="border-b border-light/50 hover:bg-light/20 transition">
-            <td class="p-3 font-semibold">${s.staffName}</td>
-            <td class="p-3 text-grey">${fmtDate(s.openedAt)}</td>
-            <td class="p-3">${fmtMoney(s.openingBalance)}</td>
-            <td class="p-3 text-teal">${fmtMoney(cashSales)}</td>
-            <td class="p-3 text-gold">${fmtMoney(cashDebts)}</td>
-            <td class="p-3 font-bold">${fmtMoney(expected)}</td>
+            <td class="p-3 font-semibold">${shift.staffName}</td>
+            <td class="p-3 text-grey">${fmtDate(shift.openedAt)}</td>
+            <td class="p-3 text-grey">${fmtDate(shift.closedAt)}</td>
+            <td class="p-3">${stats.count}</td>
+            <td class="p-3 font-bold">${fmtMoney(stats.revenue)}</td>
+            <td class="p-3 ${diff < 0 ? 'text-brandRed font-semibold' : diff > 0 ? 'text-gold font-semibold' : 'text-grey'}">${fmtMoney(diff)}</td>
           </tr>
         `;
       }).join('');
