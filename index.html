@@ -172,6 +172,10 @@
         <button id="nav-btn-history" onclick="switchPage('history')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
           <span class="mr-3">📜</span> Histórico Diário
         </button>
+        <button id="nav-btn-kitchen" onclick="switchPage('kitchen')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
+          <span class="mr-3">🍳</span> Cozinha / Bar
+          <span id="kitchen-badge-desktop" class="hidden ml-auto bg-gold text-deep text-[10px] font-bold px-1.5 py-0.5 rounded-full"></span>
+        </button>
 
         <div class="px-6 mt-6 mb-2 text-grey text-[10px] uppercase font-semibold tracking-widest">Gestão</div>
         <button id="nav-btn-stock" onclick="switchPage('stock')" class="nav-btn flex items-center px-6 py-3 hover:bg-card text-grey border-l-4 border-transparent w-full text-left transition-colors font-medium">
@@ -248,6 +252,10 @@
         </button>
         <button id="mobile-nav-history" onclick="switchPage('history')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>📜</span><span>Histórico</span>
+        </button>
+        <button id="mobile-nav-kitchen" onclick="switchPage('kitchen')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1 relative">
+          <span>🍳</span><span>Cozinha</span>
+          <span id="kitchen-badge-mobile" class="hidden absolute top-0 right-1 bg-gold text-deep text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center"></span>
         </button>
         <button id="mobile-nav-stock" onclick="switchPage('stock')" class="mobile-nav-btn text-xs px-3 py-2 text-grey font-semibold flex flex-col items-center gap-1">
           <span>📦</span><span>Stock</span>
@@ -347,6 +355,20 @@
               </table>
             </div>
           </div>
+        </section>
+
+        <!-- Page: Kitchen / Bar Display -->
+        <section id="page-kitchen" class="page-view hidden space-y-4">
+          <div class="flex justify-between items-center">
+            <h1 class="text-xl font-bold text-teal">Cozinha / Bar</h1>
+            <span class="text-xs text-grey">Atualiza automaticamente — abra num tablet na cozinha/bar</span>
+          </div>
+
+          <h2 class="text-sm font-bold text-gold uppercase tracking-wider">Pedidos Pendentes</h2>
+          <div id="kitchen-pending-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+          <h2 class="text-sm font-bold text-teal uppercase tracking-wider pt-2">Prontos para Entregar</h2>
+          <div id="kitchen-ready-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
         </section>
 
         <!-- Page: Stock Management -->
@@ -1896,7 +1918,7 @@
       const targetPage = document.getElementById("page-" + pageId);
       if (targetPage) targetPage.classList.remove("hidden");
       
-      const pages = ['tabs', 'history', 'stock', 'quebras', 'expenses', 'shifts', 'settings'];
+      const pages = ['tabs', 'history', 'kitchen', 'stock', 'quebras', 'expenses', 'shifts', 'settings'];
       pages.forEach(p => {
         const btn = document.getElementById("nav-btn-" + p);
         if (btn) {
@@ -1910,9 +1932,9 @@
         const mBtn = document.getElementById("mobile-nav-" + p);
         if (mBtn) {
           if (p === pageId) {
-            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#00C9B1] font-bold flex flex-col items-center gap-1";
+            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#00C9B1] font-bold flex flex-col items-center gap-1 relative";
           } else {
-            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#8A9BB5] font-medium flex flex-col items-center gap-1";
+            mBtn.className = "mobile-nav-btn text-xs px-3 py-2 text-[#8A9BB5] font-medium flex flex-col items-center gap-1 relative";
           }
         }
       });
@@ -1936,6 +1958,7 @@
     function renderUI() {
       if (activePage === "tabs") renderTabs();
       else if (activePage === "history") renderHistory();
+      else if (activePage === "kitchen") renderKitchenDisplay();
       else if (activePage === "stock") renderStock();
       else if (activePage === "quebras") renderQuebras();
       else if (activePage === "expenses") renderExpenses();
@@ -1943,6 +1966,7 @@
       else if (activePage === "shifts") renderActiveShifts();
 
       updateHeaderStats();
+      updateKitchenBadge();
       renderFooterStats();
       updateSidebarBusinessName();
       updateRoleBasedUI();
@@ -2086,7 +2110,7 @@
           name,
           table: activeCreateTabTable,
           note: document.getElementById("new-tab-note").value.trim(),
-          rounds: [], currentRound: []
+          rounds: [], currentRound: [], kitchenStatus: []
         });
         logAudit("Criar Conta", `Conta aberta para ${name} (Mesa: ${activeCreateTabTable || "Nenhuma"})`);
       });
@@ -2314,6 +2338,8 @@
       if (currentDetailTab.currentRound.length === 0) return showToast("Ronda vazia", "error");
       updateState(() => {
         currentDetailTab.rounds.push([...currentDetailTab.currentRound.map(i => ({ ...i }))]);
+        if (!Array.isArray(currentDetailTab.kitchenStatus)) currentDetailTab.kitchenStatus = [];
+        currentDetailTab.kitchenStatus.push({ status: "pending", timestamp: Date.now() });
         currentDetailTab.currentRound = [];
       });
       showToast("Ronda confirmada e enviada para mesa!");
@@ -2345,9 +2371,113 @@
     }
 
     function removeSavedRound(idx) {
-      updateState(() => { currentDetailTab.rounds.splice(idx, 1); });
+      updateState(() => {
+        currentDetailTab.rounds.splice(idx, 1);
+        if (Array.isArray(currentDetailTab.kitchenStatus)) currentDetailTab.kitchenStatus.splice(idx, 1);
+      });
       renderSavedRounds();
       recalcTabCheckout();
+    }
+
+    // Kitchen / Bar Display: shows every round sent to the kitchen (via "Confirmar
+    // Ronda") across all open tabs, oldest first, until staff mark it ready and
+    // then delivered. Meant to be left open on a tablet in the kitchen/bar area -
+    // since tabs already sync live via Firestore, updates appear there automatically.
+    let kitchenRefreshInterval = null;
+    function renderKitchenDisplay() {
+      const pendingList = document.getElementById("kitchen-pending-list");
+      const readyList = document.getElementById("kitchen-ready-list");
+      if (!pendingList || !readyList) return;
+
+      const pending = [], ready = [];
+      dbState.tabs.forEach(tab => {
+        if (!Array.isArray(tab.kitchenStatus)) return;
+        (tab.rounds || []).forEach((round, idx) => {
+          const ks = tab.kitchenStatus[idx];
+          if (!ks) return;
+          if (ks.status === "pending") pending.push({ tab, round, idx, ks });
+          else if (ks.status === "ready") ready.push({ tab, round, idx, ks });
+        });
+      });
+      pending.sort((a, b) => a.ks.timestamp - b.ks.timestamp);
+      ready.sort((a, b) => a.ks.timestamp - b.ks.timestamp);
+
+      const renderCard = (entry, isPending) => {
+        const mins = Math.max(0, Math.round((Date.now() - entry.ks.timestamp) / 60000));
+        return `
+          <div class="c-card p-4 rounded-xl space-y-2 border-l-4 ${isPending ? 'border-gold' : 'border-teal'}">
+            <div class="flex justify-between items-start gap-2">
+              <div>
+                <div class="font-bold text-base">${entry.tab.name}${entry.tab.table ? ` (${entry.tab.table})` : ''}</div>
+                <div class="text-xs text-grey">Pedido #${entry.idx + 1} · há ${mins} min</div>
+              </div>
+              <button onclick="${isPending ? `markRoundReady('${entry.tab.id}', ${entry.idx})` : `markRoundServed('${entry.tab.id}', ${entry.idx})`}" class="px-2.5 py-1.5 ${isPending ? 'bg-teal text-deep' : 'bg-gold text-deep'} rounded text-xs font-bold hover:opacity-90 whitespace-nowrap">${isPending ? 'Pronto' : 'Entregue'}</button>
+            </div>
+            <div class="text-sm space-y-0.5">
+              ${entry.round.map(i => `<div>${i.qty}x ${i.name}</div>`).join('')}
+            </div>
+          </div>
+        `;
+      };
+
+      pendingList.innerHTML = pending.length === 0
+        ? `<div class="text-grey text-xs col-span-full text-center py-6">Nenhum pedido pendente.</div>`
+        : pending.map(e => renderCard(e, true)).join('');
+
+      readyList.innerHTML = ready.length === 0
+        ? `<div class="text-grey text-xs col-span-full text-center py-6">Nenhum pedido pronto no momento.</div>`
+        : ready.map(e => renderCard(e, false)).join('');
+
+      // Keep "há X min" fresh while this page is left open on a kitchen tablet
+      if (!kitchenRefreshInterval) {
+        kitchenRefreshInterval = setInterval(() => {
+          if (activePage === "kitchen") renderKitchenDisplay();
+        }, 60000);
+      }
+    }
+
+    function markRoundReady(tabId, idx) {
+      updateState(() => {
+        const tab = dbState.tabs.find(t => t.id === tabId);
+        if (tab && Array.isArray(tab.kitchenStatus) && tab.kitchenStatus[idx]) {
+          tab.kitchenStatus[idx].status = "ready";
+          tab.kitchenStatus[idx].timestamp = Date.now();
+        }
+      });
+      renderKitchenDisplay();
+    }
+
+    function markRoundServed(tabId, idx) {
+      updateState(() => {
+        const tab = dbState.tabs.find(t => t.id === tabId);
+        if (tab && Array.isArray(tab.kitchenStatus) && tab.kitchenStatus[idx]) {
+          tab.kitchenStatus[idx].status = "served";
+        }
+      });
+      renderKitchenDisplay();
+    }
+
+    function countPendingKitchenOrders() {
+      let count = 0;
+      dbState.tabs.forEach(tab => {
+        if (!Array.isArray(tab.kitchenStatus)) return;
+        tab.kitchenStatus.forEach(ks => { if (ks && ks.status === "pending") count++; });
+      });
+      return count;
+    }
+
+    function updateKitchenBadge() {
+      const count = countPendingKitchenOrders();
+      const desktopBadge = document.getElementById("kitchen-badge-desktop");
+      const mobileBadge = document.getElementById("kitchen-badge-mobile");
+      if (desktopBadge) {
+        desktopBadge.classList.toggle("hidden", count === 0);
+        desktopBadge.innerText = count;
+      }
+      if (mobileBadge) {
+        mobileBadge.classList.toggle("hidden", count === 0);
+        mobileBadge.innerText = count;
+      }
     }
 
     // Autocomplete Product Catalog Search
