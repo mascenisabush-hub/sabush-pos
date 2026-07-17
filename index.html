@@ -536,6 +536,9 @@
             <span class="w-2 h-2 rounded-full bg-teal"></span> <span id="footer-mpesa">M-PESA: 0,00 MT</span>
           </div>
           <div class="flex items-center gap-2 whitespace-nowrap">
+            <span class="w-2 h-2 rounded-full bg-brandRed"></span> <span id="footer-emola">E-MOLA: 0,00 MT</span>
+          </div>
+          <div class="flex items-center gap-2 whitespace-nowrap">
             <span class="w-2 h-2 rounded-full bg-gold"></span> <span id="footer-dinheiro">DINHEIRO: 0,00 MT</span>
           </div>
           <div class="flex items-center gap-2 whitespace-nowrap">
@@ -642,7 +645,7 @@
             <div class="text-xs font-semibold text-grey">REGISTAR PAGAMENTO</div>
             <div class="grid grid-cols-2 gap-2">
               <input type="number" id="pay-amount" class="c-input w-full p-2 rounded-lg text-xs" placeholder="Valor MT">
-              <select id="pay-method" class="c-input w-full p-2 rounded-lg text-xs"><option value="Dinheiro">Dinheiro</option><option value="M-Pesa">M-Pesa</option><option value="Cartão">Cartão</option><option value="Outro">Outro</option></select>
+              <select id="pay-method" class="c-input w-full p-2 rounded-lg text-xs"><option value="Dinheiro">Dinheiro</option><option value="M-Pesa">M-Pesa</option><option value="e-Mola">e-Mola</option><option value="Cartão">Cartão</option><option value="Outro">Outro</option></select>
             </div>
             <button onclick="registerPartialPayment()" class="w-full bg-teal text-deep font-bold p-2 rounded-lg text-xs hover:opacity-90">Inserir Pagamento</button>
           </div>
@@ -902,6 +905,7 @@
         <select id="resolve-debt-method" class="c-input w-full p-2.5 rounded-lg text-sm">
           <option value="Dinheiro">Dinheiro</option>
           <option value="M-Pesa">M-Pesa</option>
+          <option value="e-Mola">e-Mola</option>
           <option value="Cartão">Cartão</option>
           <option value="Outro">Outro</option>
         </select>
@@ -2013,24 +2017,27 @@
     }
 
     function renderFooterStats() {
-      const { mpesa, dinheiro, cartao } = getPaymentMethodTotals();
-      
+      const { mpesa, emola, dinheiro, cartao } = getPaymentMethodTotals();
+
       const elMpesa = document.getElementById("footer-mpesa");
+      const elEmola = document.getElementById("footer-emola");
       const elDinheiro = document.getElementById("footer-dinheiro");
       const elCartao = document.getElementById("footer-cartao");
-      
+
       if (elMpesa) elMpesa.innerText = "M-PESA: " + fmtMoney(mpesa);
+      if (elEmola) elEmola.innerText = "E-MOLA: " + fmtMoney(emola);
       if (elDinheiro) elDinheiro.innerText = "DINHEIRO: " + fmtMoney(dinheiro);
       if (elCartao) elCartao.innerText = "CARTÃO: " + fmtMoney(cartao);
     }
 
     function getPaymentMethodTotals() {
-      const totals = { mpesa: 0, dinheiro: 0, cartao: 0 };
+      const totals = { mpesa: 0, emola: 0, dinheiro: 0, cartao: 0 };
       dbState.history.forEach(h => {
         if (h.payments) {
           h.payments.forEach(p => {
             const m = String(p.method).toLowerCase();
             if (m === "m-pesa") totals.mpesa += p.amount;
+            else if (m === "e-mola" || m === "emola") totals.emola += p.amount;
             else if (m === "dinheiro") totals.dinheiro += p.amount;
             else if (m === "cartão" || m === "cartao") totals.cartao += p.amount;
           });
@@ -2828,7 +2835,7 @@
     // EOD End-of-Day Summary Modal
     function openEodModal() {
       // Methods aggregation safely case-insensitive
-      const methods = { Dinheiro: 0, "M-Pesa": 0, "Cartão": 0, Outro: 0 };
+      const methods = { Dinheiro: 0, "M-Pesa": 0, "e-Mola": 0, "Cartão": 0, Outro: 0 };
       const topItems = {};
       const debtors = [];
 
@@ -2838,6 +2845,7 @@
             const m = String(p.method).toLowerCase();
             if (m === "dinheiro") methods["Dinheiro"] += p.amount;
             else if (m === "m-pesa") methods["M-Pesa"] += p.amount;
+            else if (m === "e-mola" || m === "emola") methods["e-Mola"] += p.amount;
             else if (m === "cartão" || m === "cartao") methods["Cartão"] += p.amount;
             else methods["Outro"] += p.amount;
           });
@@ -2858,11 +2866,12 @@
       `).join('');
 
       // Debts collected ("Cobrar Dívida") by method - recorded separately from fresh sales
-      const debtMethods = { Dinheiro: 0, "M-Pesa": 0, "Cartão": 0, Outro: 0 };
+      const debtMethods = { Dinheiro: 0, "M-Pesa": 0, "e-Mola": 0, "Cartão": 0, Outro: 0 };
       dbState.resolvedDebts.forEach(r => {
         const m = String(r.method).toLowerCase();
         if (m === "dinheiro") debtMethods["Dinheiro"] += r.amount;
         else if (m === "m-pesa") debtMethods["M-Pesa"] += r.amount;
+        else if (m === "e-mola" || m === "emola") debtMethods["e-Mola"] += r.amount;
         else if (m === "cartão" || m === "cartao") debtMethods["Cartão"] += r.amount;
         else debtMethods["Outro"] += r.amount;
       });
